@@ -1,0 +1,5 @@
+- insert:
+    - id: dsh-sovereign
+      name: dsh-sovereign
+      reload:
+        patch: live

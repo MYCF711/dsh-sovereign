@@ -1,0 +1,48 @@
+{
+  "name": "dsh-sovereign",
+  "version": "0.2.0",
+  "description": {
+    "zh": "DSH 宿主平面主权条款与内容守卫：系统提示词末节注入 + 工具结果脱敏 + 可逆性闸门。对全部 agent preset 生效。",
+    "en": "Host-plane sovereignty clause and content guard for DSH: last-section system-prompt injection, tool-result sanitization, and a reversibility gate. Applies to every agent preset."
+  },
+  "language": {
+    "default": "zh",
+    "available": ["zh", "en"],
+    "switchHint": "两份说明内容等价。中文见 README「## 中文」，English 见 README「## English」。"
+  },
+  "install": {
+    "zh": [
+      "1. 把 dsh-sovereign 目录放进 <profile>/node_modules/",
+      "2. 在 <profile>/package.json 的 dependencies 里加 \"dsh-sovereign\": \"file:./node_modules/dsh-sovereign\"",
+      "3. 在 <profile>/package.json 的 dsh.profile.bundles 数组里加 \"dsh-sovereign\"（放在载荷插件之前）",
+      "4. 重启 profile —— 插件在 boot 时加载，当前会话不会变"
+    ],
+    "en": [
+      "1. Place the dsh-sovereign directory into <profile>/node_modules/",
+      "2. Add \"dsh-sovereign\": \"file:./node_modules/dsh-sovereign\" to dependencies in <profile>/package.json",
+      "3. Add \"dsh-sovereign\" to the dsh.profile.bundles array in <profile>/package.json (before the payload plugin)",
+      "4. Restart the profile — the plugin loads at boot; the current session will not change"
+    ]
+  },
+  "verify": {
+    "bootLog": "[sovereign] clause injected at order 10250; sanitizer, gate and refusal projection armed",
+    "clauseLength": 6983,
+    "clauseSha256Example": "run: node -e \"import('./index.js').then(m=>console.log(require('crypto').createHash('sha256').update(m.CLAUSE).digest('hex').toUpperCase()))\"",
+    "zh": "重启后确认启动日志出现；再用上面的命令算 CLAUSE 的 SHA256，与实际注入的末节逐字节比对。",
+    "en": "After restarting, confirm the boot log line appears; then hash CLAUSE with the command above and compare byte-for-byte with the injected final section."
+  },
+  "test": {
+    "command": "node tests/run-all.mjs",
+    "suites": 12,
+    "assertions": 316,
+    "note_zh": "子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
+    "note_en": "Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
+  },
+  "faces": [
+    { "id": 1, "hook": "systemPrompt.section", "order": 10250, "role": "static clause (last section of the system prompt)" },
+    { "id": 2, "hook": "tools/post-execute", "role": "credential masking + hidden-carrier scrubbing" },
+    { "id": 3, "hook": "tools/pre-execute", "role": "reversibility gate (PASS / ASK / DENY)" },
+    { "id": 4, "hook": "sessionProjections", "role": "refusal score projection for the client toggle" },
+    { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture" }
+  ]
+}

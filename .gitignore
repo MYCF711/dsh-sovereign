@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# local backups of the guard's own source
+*.bak
+*.bak-*
+index.js.bak*
+
+# editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*~
+
+# logs and scratch
+*.log
+tmp/
+scratch/

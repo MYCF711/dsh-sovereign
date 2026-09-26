@@ -1,0 +1,17 @@
+# 统一按 LF 存储 —— 本仓库含大量中文与零宽字符敏感内容，
+# CRLF 转换会让跨平台比对（以及条款 SHA256 校验）产生假差异。
+* text=auto eol=lf
+
+# 源码与测试一律 LF，不做平台转换
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+
+# 明确二进制
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary
