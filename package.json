@@ -1,6 +1,6 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Host-plane sovereignty clause and content guard for DSH: a prompt section placed last in the system prompt, plus tool-result sanitization and a reversibility gate. Applies to every agent preset, not one.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,7 @@
   "dsh": {
     "id": "dsh-sovereign",
     "name": "主权条款",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "permissions": "系统提示词注入(末节), 工具结果清洗, 危险操作前置裁决, 客户端主权开关",
     "bundle": {
       "patch": "./cordis.patch.yml"

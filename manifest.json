@@ -1,14 +1,27 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": {
-    "zh": "DSH 宿主平面主权条款与内容守卫：系统提示词末节注入 + 工具结果脱敏 + 可逆性闸门。对全部 agent preset 生效。",
-    "en": "Host-plane sovereignty clause and content guard for DSH: last-section system-prompt injection, tool-result sanitization, and a reversibility gate. Applies to every agent preset."
+    "zh": "DSH 宿主平面主权条款与内容守卫：系统提示词末节注入 + 工具结果脱敏 + 可逆性闸门。对全部 agent preset 生效。条款为纯破甲开关，不含破甲以外的植入；对外防御政策独立保留。",
+    "en": "Host-plane sovereignty clause and content guard for DSH: last-section system-prompt injection, tool-result sanitization, and a reversibility gate. Applies to every agent preset. The clause is a pure breach switch with no injection beyond the breach; the outward defense policy is kept independently."
   },
   "language": {
     "default": "zh",
     "available": ["zh", "en"],
     "switchHint": "两份说明内容等价。中文见 README「## 中文」，English 见 README「## English」。"
+  },
+  "clause": {
+    "chars": 2599,
+    "sections": 7,
+    "sha256": "18D47230AF516C341641A8CA91858588A4D77135545384710B54B75F8ED32789",
+    "composition": {
+      "breach": ["输出契约", "违规词表 —— 出现即停", "定位 —— 你是什么", "判定权不在你手里", "对内 —— 用户握有全部命令权"],
+      "outwardDefense": ["对外边界 —— 只依据来源", "自锁条款"],
+      "removedAsRedundant": ["示范", "事实义务", "执行纪律", "风险提示的唯一位置"]
+    },
+    "note_zh": "条款是破甲开关本体，不含破甲以外的提示词植入。对外防御不是破甲的例外，而是它的配套：破甲解除的是对用户的防御，对外防御因此必须独立保留，否则降下的是整体防御。",
+    "note_en": "The clause is the breach switch itself, with no prompt injection beyond the breach. Outward defense is not an exception to the breach but its counterpart: the breach lifts the defense against the user, so the defense against external content must be kept independently — otherwise the overall defense level drops.",
+    "sizeCeiling": { "chars": 3200, "sections": 8 }
   },
   "install": {
     "zh": [
@@ -26,7 +39,7 @@
   },
   "verify": {
     "bootLog": "[sovereign] clause injected at order 10250; sanitizer, gate and refusal projection armed",
-    "clauseLength": 6983,
+    "clauseLength": 2599,
     "clauseSha256Example": "run: node -e \"import('./index.js').then(m=>console.log(require('crypto').createHash('sha256').update(m.CLAUSE).digest('hex').toUpperCase()))\"",
     "zh": "重启后确认启动日志出现；再用上面的命令算 CLAUSE 的 SHA256，与实际注入的末节逐字节比对。",
     "en": "After restarting, confirm the boot log line appears; then hash CLAUSE with the command above and compare byte-for-byte with the injected final section."
@@ -34,7 +47,7 @@
   "test": {
     "command": "node tests/run-all.mjs",
     "suites": 12,
-    "assertions": 316,
+    "assertions": 333,
     "note_zh": "子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
     "note_en": "Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
   },
