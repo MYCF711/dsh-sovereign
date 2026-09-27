@@ -178,6 +178,75 @@ Copy-Item -Recurse -Force .\dsh-sovereign "$profile\node_modules\dsh-sovereign"
 [sovereign] clause injected at order 10250; sanitizer, gate and refusal projection armed
 ```
 
+### 功能开关（v0.5.0）
+
+输入框左侧的三态按钮**现在是真的断路器**，不再是指示灯。
+
+| 状态 | 颜色 | 含义 |
+|---|---|---|
+| 未激活 | 灰 `#94a3b8` | 条款**不在**系统提示词里，每轮省下 3339 字符 |
+| 已激活 | 绿 `#10b981` | 条款在提示词末节（order 10250） |
+| 检测到拒答 | 红 `#ef4444` | 已激活，且上一条回复被判拒答（8 秒后复位） |
+
+**生效时机：下一个模型请求。** 不需要重启 profile，不需要新会话，不需要刷新页面。
+
+#### 两条通道，互补而非二选一
+
+| | FACE 6 | FACE 7 |
+|---|---|---|
+| 层 | 注册表级 | 请求级 |
+| 做什么 | dispose / 重建 `sovereign:clause` section | 在 `system-prompt/assemble` waterfall 里过滤掉条款段 |
+| 机制 | `systemPrompt.section()` 返回 Cordis effect disposer | `assembly.sections` 是 waterfall 输入，返回值即最终 sections |
+| 源码依据 | `dsh-system-prompt/lib/index.js:240-243`（disposer）、`:208-210`（change 事件）、`:317`（每次现取，无缓存） | 同文件 `:355`（waterfall 调用）、`dsh-scope/lib/invariant.js:30`（按 scope 每请求分发） |
+| 成本 | 一次性 | 开着时**零开销直通**；关着时一次数组过滤。mtime 缓存避免每请求读盘 |
+
+#### 状态持久化
+
+`<home>\sovereign-state.json`（先写 `.tmp` 再 rename，避免读到半截 JSON）：
+
+```json
+{ "version": 1, "clause": false, "updatedAt": "2026-09-27T14:22:01.000Z" }
+```
+
+**任何解析失败一律回落「开」** —— 文件缺失、半截 JSON、版本不符、`clause` 非布尔，
+全部当作「没有被关掉」。**绝不因为读文件失败而静默禁用主权能力。**
+
+#### 手工操作（不经按钮）
+
+```powershell
+# 查当前状态
+curl.exe -s http://127.0.0.1:57108/plugins/dsh-sovereign/state
+
+# 关掉条款
+curl.exe -s -X POST http://127.0.0.1:57108/plugins/dsh-sovereign/switch `
+  -H "content-type: application/json" -d "{\"clause\":false}"
+```
+
+#### ⚠ 一个必须知道的限制
+
+**改宿主插件源码在 DSH 下无法免重启。** v0.5.0 逐条验证过并已排除：
+
+| 路径 | 结果 | 阻断原因 |
+|---|---|---|
+| chokidar 文件监听 | ✗ | `dsh-hmr/lib/index.js:240-245` 的 `ignored` 默认含 `**/node_modules` |
+| 作为 loader entry 重载 | ✗ | 同文件 `:414` 比对的是 **entry 自身 filename**，`node_modules/*` 不是 entry |
+| 改 patch 触发 refresh | ✗ **实测** | 加锚点后 6 秒探测仍 404；`reconcileProfilePatches` 协调**配置层**，不重载模块源码 |
+| `pluginManager.setPluginEnabled` | ✗ | 最终同走 `reconcileProfilePatches` |
+| `connection.rpc.handle` | 未采用 | 全库 0 个实际调用点 |
+
+**结论**：装好之后需要**一次性重启**；此后开关的每一次切换都不再需要重启。
+
+### 压缩系统提示词占比
+
+**条款一个字都没删**（仍 3339 字符 / 8 节）。压缩通过关闭实现：
+
+```
+开：3339 字符 ≈ 1700–1900 token
+关：0 字符
+```
+
+比删字彻底 —— 删字最多省 30%，关闭省 100%。
+
 再确认系统提示词末节存在。**本仓库的验证方式是逐字节比对**：
 
 ```powershell

@@ -37,6 +37,8 @@
 // timers — every listener below is therefore synchronous and pure string work,
 // which is also consistent with the package making zero network calls.
 
+import { readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
+
 export const name = "dsh-sovereign";
 export const inject = ["tools", "systemPrompt"];
 
@@ -1491,16 +1493,387 @@ function armClauseCapture(ctx) {
   });
 }
 
-// ── wiring ──────────────────────────────────────────────────────────────────
-export function apply(ctx) {
-  // FACE 1 — the clause, last section of the system prompt.
-  ctx.effect(() =>
-    ctx.systemPrompt.section({
+// ── FACE 6 — 运行时开关（switching without a profile restart） ───────────────
+//
+// 为什么需要这一面：v0.4.0 之前，开关只写 localStorage，宿主面看不见它，
+// 于是按钮变灰而条款照样注入 —— 关不掉。且 section 在 apply() 里无条件注册，
+// 唯一能改它的时机是 profile 重启。
+//
+// 这里补上缺失的那条链路：
+//   客户端 fetch POST /plugins/dsh-sovereign/switch
+//     → 宿主校验 → 写 sidecar 文件持久化 → dispose/重建 section effect
+//       → systemPrompt.section() 的 disposer 触发 system-prompt/change
+//         → 下一次 assemble 立刻不含/含条款
+//
+// 关键机制（已读源码确认，非推测）：
+//   · dsh-system-prompt/lib/index.js:240-243 —— section() 返回「exact Cordis
+//     effect disposer」，dispose 即注销。
+//   · 同文件 :208-210 —— ScopedLayers 的变更回调里 emit("system-prompt/change")。
+//   · 同文件 :317 —— assemble() 每次都用 this.layers.merge(scope, ...) 现取
+//     section 表，无缓存。所以 dispose 之后的下一次 assemble 立即生效。
+//   · 通道范式抄自 dsh-image-gen（lib/index.js:21311-21319 注册路由，
+//     lib/client.js:116055 用 same-origin fetch POST）。
+//
+// 本面自身零系统提示词成本：路由与监听都不注册 section，只在开关变更时增删
+// 那一个 section。条款不在提示词里时，成本为 0。
+
+const SWITCH_ROUTE = "/plugins/dsh-sovereign/switch";
+const STATE_ROUTE = "/plugins/dsh-sovereign/state";
+const SWITCH_FILE = "sovereign-state.json";
+const SWITCH_VERSION = 1;
+
+// 运行时开关状态**不放在模块级**。
+//
+// 为什么：同一个 Node 进程里同一模块可能被实例化多次（热重载、多 agent scope）。
+// 模块级 `clauseDisposer` 会在第二次 apply() 时还是第一次留下的那个函数，
+// 于是 syncClauseSection() 走「已注册，不重复注册」的早退分支 —— 而它把 section
+// 注册到了**已经废弃的那个 systemPrompt 实例**上，新宿主一个 section 都没拿到。
+// 症状是最坏的一类：日志照打「clause injected」，提示词里却没有条款。
+//
+// 所以状态改成每个 apply() 自己的闭包对象，由 makeSwitchState() 造。
+
+/** sidecar 文件的绝对路径。home 目录随 DSH 安装位置走，不写死。 */
+export function switchFilePath() {
+  const home = process.env.DSH_HOME
+    || process.env.DSH_LAUNCHER_HOME
+    || process.env.APPDATA
+    || process.env.HOME
+    || ".";
+  return `${home}${process.platform === "win32" ? "\\" : "/"}${SWITCH_FILE}`;
+}
+
+/** 造一份属于某次 apply() 的开关状态。 */
+export function makeSwitchState(ctx) {
+  return {
+    /** 宿主 ctx —— 路由处理器经由闭包读它，不做模块级共享。 */
+    ctx,
+    /** 真值来源是 sidecar 文件；这里是它在内存里的镜像。读文件失败一律为 true。 */
+    clauseEnabled: true,
+    /** 当前已注册的 clause section 的 disposer；undefined = 未注册。 */
+    disposer: undefined,
+  };
+}
+
+/**
+ * 从句柄上别下来的布尔值解析开关状态。
+ *
+ * 为什么不用 JSON.parse 直接返回对象：sidecar 可能是半截写入、被手工编辑成
+ * 非法 JSON、或干脆是个字符串。任何解析失败都必须回落到「开」—— 这是主权
+ * 能力本身，解析不了就当作没被关掉，绝不能因为读文件失败而静默禁用条款。
+ */
+export function parseSwitchState(raw) {
+  if (typeof raw !== "string" || raw.trim().length === 0) return true;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object") return true;
+    if (parsed.version !== SWITCH_VERSION) return true;
+    if (typeof parsed.clause !== "boolean") return true;
+    return parsed.clause;
+  } catch {
+    return true;
+  }
+}
+
+/** 把多个 section disposer 合成一个：任一处 dispose 都整体靠上。 */
+function combineDisposers(parts) {
+  const live = parts.filter((p) => typeof p === "function");
+  if (live.length === 0) return undefined;
+  if (live.length === 1) return live[0];
+  return () => {
+    for (const p of live) {
+      try {
+        p();
+      } catch {
+        /* 单个 destroy 失败不阻断其余 */
+      }
+    }
+  };
+}
+
+/**
+ * 按 state.clauseEnabled 注册或注销条款 section。
+ *
+ * 「开」只做一件事：注册一个 section，并把它的 disposer 存起来。
+ * 「关」只做一件事：把那个 disposer 靠上。dispose 是同步的，且会触发
+ * system-prompt/change —— 所以下一次 assemble 就已经不含条款了，
+ * 不需要重启 profile，也不需要新会话。
+ *
+ * @param state - makeSwitchState() 造出的 per-apply 状态。
+ * @returns 是否真的改变了注册状态。
+ */
+export function syncClauseSection(state) {
+  if (state === undefined || state === null) return false;
+  const prompt = state.ctx === undefined ? undefined : state.ctx.get("systemPrompt");
+  if (prompt === undefined || prompt === null) return false;
+
+  if (!state.clauseEnabled) {
+    if (typeof state.disposer === "function") {
+      try {
+        state.disposer();
+      } catch {
+        /* 已经靠上过一次也无所谓 */
+      }
+      state.disposer = undefined;
+      return true;
+    }
+    return false;
+  }
+
+  if (typeof state.disposer === "function") return false; // 已注册，不重复注册
+  try {
+    state.disposer = prompt.section({
       name: "sovereign:clause",
       order: SECTION_ORDER,
       text: CLAUSE,
-    }),
-  );
+    });
+  } catch {
+    // 同名 section 已存在（例如前一任未清理干净）—— 视为已注册，不炸。
+    state.disposer = undefined;
+  }
+  return true;
+}
+
+/** 读 sidecar 文件并把 state.clauseEnabled 同步成文件里的值。 */
+export function loadSwitchState(state) {
+  if (state === undefined || state === null) return true;
+  try {
+    const raw = readFileSync(switchFilePath(), "utf8");
+    state.clauseEnabled = parseSwitchState(raw);
+  } catch {
+    state.clauseEnabled = true; // 文件不存在 ⇒ 默认开
+  }
+  return state.clauseEnabled;
+}
+
+/** 原子写 sidecar：先写临时文件再 rename，避免读到半截 JSON。 */
+function persistSwitchState(enabled) {
+  try {
+    const target = switchFilePath();
+    const tmp = `${target}.tmp`;
+    writeFileSync(tmp, JSON.stringify({
+      version: SWITCH_VERSION,
+      clause: enabled,
+      updatedAt: new Date().toISOString(),
+    }), "utf8");
+    renameSync(tmp, target);
+    return true;
+  } catch {
+    // 落盘失败不阻断本次切换：内存语义已经改了，重启后会回到文件里的旧值。
+    return false;
+  }
+}
+
+/** 读请求体，带硬上限，防止畸形请求把宿主内存吃爆。 */
+function readBody(req, limit = 8 * 1024) {
+  return new Promise((resolve) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        resolve(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", () => resolve(null));
+  });
+}
+
+function sendJson(res, status, body) {
+  try {
+    const text = JSON.stringify(body);
+    res.writeHead(status, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    res.end(text);
+  } catch {
+    /* 客户端已断开 */
+  }
+}
+
+/** 开关的当前状态，供客户端首次渲染时对齐。 */
+export function switchSnapshot(state) {
+  return {
+    ok: true,
+    clause: state.clauseEnabled,
+    file: switchFilePath(),
+    registered: typeof state.disposer === "function",
+    clauseChars: CLAUSE.length,
+  };
+}
+
+function armSwitchRoutes(state) {
+  const webServer = state.ctx.get("webServer");
+  if (webServer === undefined || webServer === null) return undefined;
+
+  const offState = webServer.register({
+    kind: "exact",
+    path: STATE_ROUTE,
+    handler: (req, res) => {
+      if ((req.method ?? "GET").toUpperCase() !== "GET") {
+        sendJson(res, 405, { ok: false, error: "method-not-allowed" });
+        return;
+      }
+      sendJson(res, 200, switchSnapshot(state));
+    },
+  });
+
+  const offSwitch = webServer.register({
+    kind: "exact",
+    path: SWITCH_ROUTE,
+    handler: async (req, res) => {
+      if ((req.method ?? "GET").toUpperCase() !== "POST") {
+        sendJson(res, 405, { ok: false, error: "method-not-allowed" });
+        return;
+      }
+      const body = await readBody(req);
+      if (body === null) {
+        sendJson(res, 413, { ok: false, error: "body-too-large" });
+        return;
+      }
+      let wanted;
+      try {
+        wanted = JSON.parse(body)?.clause;
+      } catch {
+        sendJson(res, 400, { ok: false, error: "bad-json" });
+        return;
+      }
+      if (typeof wanted !== "boolean") {
+        sendJson(res, 400, { ok: false, error: "clause-must-be-boolean" });
+        return;
+      }
+      state.clauseEnabled = wanted;
+      const persisted = persistSwitchState(wanted);
+      let changed = false;
+      try {
+        changed = syncClauseSection(state);
+      } catch {
+        changed = false;
+      }
+      sendJson(res, 200, { ...switchSnapshot(state), persisted, changed });
+    },
+  });
+
+  return combineDisposers([offState, offSwitch]);
+}
+
+// ── FACE 7 — 请求级开关（真正的即时生效） ────────────────────────────────────
+//
+// 为什么必须有这一面：FACE 6 的 section 增删是**注册表级**操作，它的副作用是
+// 「改开关要重启 profile」—— 因为 section 注册发生在 boot 期，而 DSH 不对
+// node_modules 里的宿主插件做 watch/reload。
+//
+// 但 assemble 是**每次构造模型请求都跑一遍**的，而且 `assembly.sections` 就是
+// 它的输入参数、返回值直接成为最终 sections。证据：
+//   dsh-system-prompt/lib/index.js:355
+//     const transformed = await this.ctx.waterfall(scopeTarget(this, scope),
+//       "system-prompt/assemble", assembly, context, () => Promise.resolve(assembly));
+//   dsh-scope/lib/invariant.js:30
+//     "system-prompt/assemble": (args) => args[1]["scope"],   ← 按 scope 分发，每请求触发
+//
+// 于是在这个 waterfall 里按当前开关状态过滤掉 `sovereign:clause`，
+// 就等于让开关**在下一个模型请求上立刻生效** —— 不需要重启，不需要新会话，
+// 也不需要刷新页面。
+//
+// 与 FACE 6 的关系：两者互补，不是二选一。
+//   · FACE 6（section 增删）决定「基线」：重启后按文件状态决定注不注入。
+//   · FACE 7（waterfall 过滤）决定「运行期」：开关一动，请求级立即跟随。
+// 有了 FACE 7 之后，唯一还需要重启的场景是「这份代码本身首次进内存」。
+
+/** sidecar 的 mtime 缓存：避免每个请求都读盘解析。 */
+const gateCache = { mtimeMs: -1, enabled: true, primed: false };
+
+/**
+ * 读开关状态的带缓存版本。
+ *
+ * 缓存键是 **mtimeMs**，不是内容 —— 文件没被改过就直接复用上次解析结果。
+ * 开关切换会重写文件（mtime 必然变化），所以缓存不会让状态滞留。
+ * 文件不存在 ⇒ 回落到 state 里的内存值（那是 FACE 6 已解析过的）。
+ */
+export function readSwitchStateLive(state) {
+  const file = switchFilePath();
+  try {
+    const st = statSync(file);
+    if (gateCache.primed && st.mtimeMs === gateCache.mtimeMs) return gateCache.enabled;
+    const enabled = parseSwitchState(readFileSync(file, "utf8"));
+    gateCache.mtimeMs = st.mtimeMs;
+    gateCache.enabled = enabled;
+    gateCache.primed = true;
+    return enabled;
+  } catch {
+    // 文件暂时读不到：用内存值，并把缓存置为未初始化，下次请求重新尝试读盘。
+    gateCache.primed = false;
+    return state === undefined || state === null ? true : state.clauseEnabled;
+  }
+}
+
+/**
+ * 在 assemble waterfall 上按开关状态过滤条款段。
+ *
+ * 三条纪律：
+ *   1. 开着的时候**直接 next()**，零开销 —— 不改数组、不复制对象。
+ *   2. 只剔除 `sovereign:clause` 这一个名字，绝不碰别人的 section。
+ *   3. 本来就没有这一段时也直接 next()，不制造无谓的新对象。
+ *
+ * @param state - makeSwitchState() 造出的 per-apply 状态。
+ * @returns 取消监听的 disposer。
+ */
+export function armRequestGate(state) {
+  if (state === undefined || state === null) return () => {};
+  const ctx = state.ctx;
+  if (ctx === undefined || typeof ctx.on !== "function") return () => {};
+
+  return ctx.on("system-prompt/assemble", async (assembly, _context, next) => {
+    let live = true;
+    try {
+      live = readSwitchStateLive(state);
+    } catch {
+      // 读状态失败时**保留条款**：这是主权能力，宁可多注入也不能因读取异常而消失。
+      live = true;
+    }
+    if (live) return next();
+
+    const sections = assembly === null || typeof assembly !== "object" || !Array.isArray(assembly.sections)
+      ? null
+      : assembly.sections;
+    if (sections === null) return next();
+
+    const filtered = sections.filter((s) => s === null || typeof s !== "object" || s.name !== "sovereign:clause");
+    // 数组里没有条款段（例如它已被 FACE 6 摘掉）⇒ 原样放行，不造新对象。
+    if (filtered.length === sections.length) return next();
+
+    return { ...assembly, sections: filtered };
+  });
+}
+
+// ── wiring ──────────────────────────────────────────────────────────────────
+export function apply(ctx) {
+  // FACE 6 — 开关通道。状态是**本次 apply() 私有的**闭包对象，不跨实例共享。
+  // 先读持久化状态，再按状态决定 clause section 的生死。
+  const state = makeSwitchState(ctx);
+  loadSwitchState(state);
+  ctx.effect(() => armSwitchRoutes(state));
+  ctx.effect(() => {
+    syncClauseSection(state);
+    return () => {
+      if (typeof state.disposer === "function") {
+        try {
+          state.disposer();
+        } catch {
+          /* 卸载期的注销失败无需上报 */
+        }
+        state.disposer = undefined;
+      }
+    };
+  });
+
+  // FACE 7 — 请求级开关：assemble waterfall 里按当前状态过滤条款段。
+  // 这是「不重启也能生效」的那一半；FACE 6 是「重启后基线正确」的那一半。
+  ctx.effect(() => armRequestGate(state));
 
   // FACE 5 — 条款元数据捕获（只读）。
   // 宣告浮层要显示「真实组装结果」，而投影只吃会话事件流、读不到提示词文本。

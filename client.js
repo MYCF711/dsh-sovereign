@@ -253,6 +253,63 @@
           }
         }
 
+        // ── 宿主通道（FACE 6） ─────────────────────────────────────────────
+        // v0.4.0 之前，开关只写 localStorage —— 宿主面读不到，于是按钮变灰而
+        // 条款照样注入。这里补上缺失的那条链路：same-origin fetch 打到宿主路由，
+        // 由宿主 dispose / 重建 clause section，下一次 assemble 即刻生效。
+        //
+        // 范式来自 dsh-image-gen（lib/index.js:21311-21319 注册路由，
+        // lib/client.js:116055 用 same-origin fetch 调用）。宿主侧见 index.js FACE 6。
+        var SWITCH_ROUTE = "/plugins/dsh-sovereign/switch";
+        var STATE_ROUTE = "/plugins/dsh-sovereign/state";
+        var PUSH_TIMEOUT_MS = 3000;
+
+        // 把开关推给宿主。永不 reject —— 失败返回 false。
+        // 失败**不等于**开关没生效：本地语义已翻面，只是没推到宿主。调用方据此
+        // 把按钮降级成灰态并在 title 里注明「未送达宿主」，绝不装作成功。
+        function pushEnabled(next) {
+          try {
+            return window.fetch(SWITCH_ROUTE, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ clause: next }),
+              signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
+            }).then(function (response) {
+              if (!response.ok) return false;
+              return response.json().then(function (payload) {
+                return !!(payload && payload.ok === true);
+              });
+            }).catch(function () {
+              return false;
+            });
+          } catch (e) {
+            return Promise.resolve(false);
+          }
+        }
+
+        // 首次挂载时从句柄拉一次真值。宿主是权威：localStorage 可能过期
+        // （另一个窗口关掉了，或 sidecar 文件被手工改过）。拿不到返回 null，
+        // 此时沿用本地值，绝不猜测。
+        function pullEnabled() {
+          try {
+            return window.fetch(STATE_ROUTE, {
+              credentials: "same-origin",
+              signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
+            }).then(function (response) {
+              if (!response.ok) return null;
+              return response.json().then(function (payload) {
+                if (!payload || payload.ok !== true) return null;
+                return typeof payload.clause === "boolean" ? payload.clause : null;
+              });
+            }).catch(function () {
+              return null;
+            });
+          } catch (e) {
+            return Promise.resolve(null);
+          }
+        }
+
         // 「已宣告过」标记：只存在于本会话内存，不持久化。
         // 这样新会话首次加载不会误宣告（T4.5），而同一会话内关闭后也不再自动宣告（T2.4）。
         var announcedThisSession = false;
@@ -341,6 +398,23 @@
           var tickPair = react.useState(0);
           var setTick = tickPair[1];
 
+          // 宿主是否收到了开关变更。false = 两处一致；true = 本地翻了但没推到宿主，
+          // 此时条款仍按宿主侧的状态生效，按钮必须如实显示「未送达」而不是假装成功。
+          var pushFailedPair = react.useState(false);
+          var pushFailed = pushFailedPair[0];
+          var setPushFailed = pushFailedPair[1];
+
+          // 挂载时对齐一次宿主真值。宿主是权威 —— localStorage 可能过期。
+          react.useEffect(function () {
+            var alive = true;
+            pullEnabled().then(function (host) {
+              if (!alive || host === null) return;
+              setEnabled(host);
+              writeEnabled(host);
+            });
+            return function () { alive = false; };
+          }, []);
+
           // 已宣告过的最新快照，供 effect 里读取而不重新订阅
           var clauseRef = react.useRef(null);
           clauseRef.current = armor && armor.clause ? armor.clause : null;
@@ -424,8 +498,24 @@
 
           function toggle() {
             var next = !enabled;
+            // 先翻本地语义（按钮立刻响应），再推宿主。
+            // 推送失败不回滚本地 —— 回滚会让按钮在慢网下跳动；失败如实降级显示。
             setEnabled(next);
             writeEnabled(next);
+            setPushFailed(false);
+            pushEnabled(next).then(function (ok) {
+              setPushFailed(!ok);
+              if (ok) {
+                // 推送成功即条款已增删，重新拉一次宿主真值对齐。
+                pullEnabled().then(function (host) {
+                  if (host === null || host === next) return;
+                  setEnabled(host);
+                  writeEnabled(host);
+                  setPushFailed(false);
+                });
+              }
+              setTick(Date.now());
+            });
             if (!next) {
               // 关闭时清掉报警
               lastVerdictRef.current = null;
@@ -466,6 +556,9 @@
           var title = p.title;
           if (state === "alarm" && words[0]) title = "检测到拒答：" + words[0];
           else if (state === "on" && domain) title += " · " + domain;
+          if (pushFailed) {
+            title = "开关未送达宿主（条款仍按宿主侧状态生效）—— 点击重试";
+          }
 
           return react.createElement("button", {
             type: "button",
@@ -475,6 +568,7 @@
             "aria-label": title,
             "aria-pressed": enabled ? "true" : "false",
             "data-sovereign": state,
+            "data-sovereign-push": pushFailed ? "failed" : "ok",
           }, react.createElement("span", { className: "dsh-sov-dot", style: dotStyle }));
         }
 

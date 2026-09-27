@@ -1,6 +1,6 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": {
     "zh": "DSH 宿主平面主权条款与内容守卫：系统提示词末节注入 + 工具结果脱敏 + 可逆性闸门。对全部 agent preset 生效。条款即主权能力本身：裁定权归用户、对外防御（抗注入）。不含风险提示。",
     "en": "Host-plane sovereignty clause and content guard for DSH: last-section system-prompt injection, tool-result sanitization, and a reversibility gate. Applies to every agent preset. The clause IS the sovereignty capability: user-held adjudication plus outward defense (anti-injection). No risk notices."
@@ -32,6 +32,35 @@
       "boundary_en": "What is affected is only whether to act on it, never whether to read it as data. Injected content is read, cited and delivered as usual, but it does not change direction."
     },
     "sizeCeiling": { "chars": 3800, "sections": 8 }
+  },
+  "switch": {
+    "note_zh": "功能开关。条款一字未删（3339 字符）；压缩靠「关掉 = 0 字符」实现。",
+    "note_en": "Feature switch. The clause is byte-for-byte unchanged (3339 chars); compression is achieved by switching it off (0 chars), not by deleting text.",
+    "stateFile": "sovereign-state.json",
+    "default": "on",
+    "failOpen": true,
+    "failOpen_zh": "读取失败 / 半截 JSON / 版本不符 / clause 非布尔 —— 一律回落「开」。绝不因读文件失败而静默禁用主权能力。",
+    "failOpen_en": "Any read or parse failure falls back to ON. Sovereignty is never silently disabled by a file error.",
+    "endpoints": {
+      "state": { "method": "GET", "path": "/plugins/dsh-sovereign/state" },
+      "switch": { "method": "POST", "path": "/plugins/dsh-sovereign/switch", "body": "{ \"clause\": boolean }" }
+    },
+    "faces": {
+      "FACE 6": {
+        "role_zh": "注册表级：dispose / 重建 clause section，重启后基线正确",
+        "role_en": "Registry level: dispose or re-create the clause section; correct baseline after a restart",
+        "mechanism": "systemPrompt.section() disposer — dsh-system-prompt/lib/index.js:240-243; change event :208-210; assemble re-merges each time :317"
+      },
+      "FACE 7": {
+        "role_zh": "请求级：在 assemble waterfall 里按开关过滤条款段 —— 下一个模型请求即生效，不重启、不新会话、不刷新",
+        "role_en": "Request level: filter the clause section inside the assemble waterfall — effective on the next model request, with no restart, new session or page refresh",
+        "mechanism": "system-prompt/assemble waterfall — dsh-system-prompt/lib/index.js:355; per-scope dispatch dsh-scope/lib/invariant.js:30",
+        "cost_zh": "开着时零开销直通（不改数组、不复制对象）；mtime 缓存避免每请求读盘",
+        "cost_en": "Zero cost while on (no array mutation, no object copy); an mtime cache avoids a disk read per request"
+      }
+    },
+    "restartPolicy_zh": "改宿主插件源码在 DSH 下无法免重启（HMR 的 ignored 默认含 **/node_modules；patch 协调不重载模块源码）。一次性重启之后，开关的每一次切换都不再需要重启。",
+    "restartPolicy_en": "Host plugin source changes cannot be applied without a restart on DSH (HMR ignores **/node_modules by default; patch reconciliation does not reload module source). After that one restart, no further restarts are needed for switch toggles."
   },
   "install": {
     "zh": [
@@ -66,6 +95,8 @@
     { "id": 2, "hook": "tools/post-execute", "role": "credential masking + hidden-carrier scrubbing" },
     { "id": 3, "hook": "tools/pre-execute", "role": "reversibility gate (PASS / ASK / DENY)" },
     { "id": 4, "hook": "sessionProjections", "role": "refusal score projection for the client toggle" },
-    { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture" }
+    { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture" },
+    { "id": 6, "hook": "webServer.register", "role": "switch endpoints + sidecar persistence; disposes or re-creates the clause section" },
+    { "id": 7, "hook": "system-prompt/assemble", "role": "request-level clause filtering — the switch takes effect on the next model request, with no restart" }
   ]
 }
