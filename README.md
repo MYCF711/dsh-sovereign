@@ -236,6 +236,38 @@ curl.exe -s -X POST http://127.0.0.1:57108/plugins/dsh-sovereign/switch `
 
 **结论**：装好之后需要**一次性重启**；此后开关的每一次切换都不再需要重启。
 
+#### 升级/重新部署后的自检（三步）
+
+改过 `index.js` 或 `client.js` 并复制进 profile 之后，**旧的宿主进程仍在跑旧代码**。
+用这三步判断新代码有没有真的进内存：
+
+```powershell
+# 1) 看宿主进程的启动时间，与部署时间比对
+Get-NetTCPConnection -LocalPort <DSH 端口> -State Listen |
+  ForEach-Object { Get-Process -Id $_.OwningProcess | Select-Object Id, StartTime }
+
+# 2) 探路由：200 = 新代码已加载；404 = 仍是旧代码
+curl.exe -s http://127.0.0.1:<DSH 端口>/plugins/dsh-sovereign/state
+
+# 3) 对照组：确认 webServer 本身是活的（405 = 路由存在但方法不符）
+curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:<DSH 端口>/plugins/dsh-image-gen/canvas-state
+```
+
+判读：
+
+| 步骤 2 | 步骤 3 | 结论 |
+|---|---|---|
+| 200 | 405 | ✅ 新代码已加载，可继续验证开关 |
+| **404** | 405 | ⚠ **webServer 活着但本插件的路由不存在 ⇒ 宿主仍是旧代码，必须重启** |
+| 失败 | 失败 | webServer 没起来，与插件无关 |
+
+**重启方法**（Windows）：`Stop-Process -Id <宿主 PID> -Force`，launcher 会自动拉起；
+或关掉再打开 DSH Web 窗口。
+
+> ⚠ 这一步**必须由人在宿主之外执行**：宿主进程就是 agent 自己的执行环境，
+> agent 杀掉它等于终止自己，且重启不会恢复原会话。任何在会话内「自动重启」的
+> 尝试都是自毁，不是自动化。
+
 ### 压缩系统提示词占比
 
 **条款一个字都没删**（仍 3339 字符 / 8 节）。压缩通过关闭实现：
