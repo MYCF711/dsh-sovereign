@@ -16,8 +16,14 @@
     "index.js",
     "client.js",
     "cordis.patch.yml",
-    "README.md"
+    "manifest.json",
+    "README.md",
+    "CHANGELOG.md",
+    "tests"
   ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0 <5"
+  },
   "scripts": {
     "test": "node tests/run-all.mjs"
   },
