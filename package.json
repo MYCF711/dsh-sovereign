@@ -1,7 +1,7 @@
 {
   "name": "dsh-sovereign",
   "version": "0.5.0",
-  "description": "Host-plane sovereignty clause and content guard for DSH: a prompt section placed last in the system prompt, plus tool-result sanitization, a reversibility gate, and a live feature switch that takes effect on the next model request. Applies to every agent preset, not one.",
+  "description": "DSH 宿主平面主权条款与内容守卫：把主权条款注入系统提示词末节，清洗工具结果中的凭据与隐蔽载体，按可逆性裁决危险操作，并提供可即时切换的功能开关（点开即生效，无需重启）。对全部 agent preset 生效，不依赖任何特定模式。",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",

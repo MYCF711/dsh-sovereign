@@ -65,12 +65,37 @@
           ".dsh-sov-dot{width:14px;height:14px;border-radius:999px;flex:none;display:block}",
         ].join("");
 
-        // 三态配色：只取色值与文案，按钮外观一律走 CSS 变量。
+        // 四态配色：只取色值与文案，按钮外观一律走 CSS 变量。
+        //
+        // 第四态 `shadowed`（2026-09-29 新增）：开关为「开」、宿主也报 section 已注册，
+        // 但 assemble 的制品里找不到条款段 —— 通常是被别的插件的 `complete: true`
+        // 顶掉了。这一态必须显示为【灰】，否则按钮是绿的而条款实际没进提示词，
+        // 等于向用户报告一个不存在的保证。
         var PALETTE = {
           off: { dot: "#94a3b8", title: "主权未激活 —— 点击激活主权条款" },
           on: { dot: "#10b981", title: "主权已激活 —— 点击关闭" },
           alarm: { dot: "#ef4444", title: "检测到拒答 —— 点击复位" },
+          shadowed: {
+            dot: "#94a3b8",
+            title: "主权开关已开，但条款未进入系统提示词（被其他插件的 complete 段顶掉）—— 点击查看说明",
+          },
         };
+
+        // 被顶掉时弹给用户的说明。只在用户【点击开关】时弹，不在每次渲染时弹 ——
+        // 渲染是高频的，弹窗会变成骚扰。
+        var SHADOWED_NOTICE = [
+          "主权开关是开着的，但条款没有进入系统提示词。",
+          "",
+          "原因：本插件注册的系统提示词段被另一个插件的 complete 独占段顶掉了。",
+          "complete 段生效时，DSH 会把整个 sections 数组替换成只含它自己那一段 ——",
+          "本插件的条款、以及其他所有插件的段都会一起消失。",
+          "",
+          "这不是本插件能阻止的：提示词的组装顺序是「先跑 waterfall，再做 complete 覆盖」，",
+          "本插件没有 complete 之后可以挂钩的位置。",
+          "",
+          "排除做法：检查是否装了使用 complete: true 的插件，或某个 agent preset",
+          "配置了 persona.complete = true。",
+        ].join("\n");
 
         // ── 拒答词红字高亮 ────────────────────────────────────────────────
         // 目标：agent 被判拒答时，把【命中的拒绝词】在会话正文里染成红色，
@@ -291,7 +316,12 @@
         // 首次挂载时从句柄拉一次真值。宿主是权威：localStorage 可能过期
         // （另一个窗口关掉了，或 sidecar 文件被手工改过）。拿不到返回 null，
         // 此时沿用本地值，绝不猜测。
-        function pullEnabled() {
+        // 从句柄拉一次完整真值（clause + shadowed）。宿主是权威。
+        //
+        // 返回对象而非布尔：shadowed 必须一并带回，否则按钮会显示绿色而条款实际
+        // 没进提示词 —— 那等于向用户报告一个不存在的保证。
+        // 拿不到返回 null（调用方据此保持当前显示，不做任何猜测）。
+        function pullState() {
           try {
             return window.fetch(STATE_ROUTE, {
               credentials: "same-origin",
@@ -300,7 +330,15 @@
               if (!response.ok) return null;
               return response.json().then(function (payload) {
                 if (!payload || payload.ok !== true) return null;
-                return typeof payload.clause === "boolean" ? payload.clause : null;
+                if (typeof payload.clause !== "boolean") return null;
+                // shadowed：开关为「开」、section 已注册，但制品里找不到条款段 ——
+                // 通常是被别的插件的 `complete: true` 顶掉了（assemble 的 complete
+                // 处理在 waterfall 之后，本插件无法对抗）。
+                // 必须一并带回来：否则按钮会显示绿色，而条款实际没进提示词 —— 骗人。
+                return {
+                  clause: payload.clause,
+                  shadowed: payload.shadowed === true,
+                };
               });
             }).catch(function () {
               return null;
@@ -404,15 +442,45 @@
           var pushFailed = pushFailedPair[0];
           var setPushFailed = pushFailedPair[1];
 
-          // 挂载时对齐一次宿主真值。宿主是权威 —— localStorage 可能过期。
+          // ── 与宿主强绑定（2026-09-29）─────────────────────────────────────
+          //
+          // 需求：开关状态与实际状态双向同步 ——
+          //   ① 用户点开关 ⇒ 宿主实际状态跟着变（POST /switch）
+          //   ② 宿主实际状态变了（别的途径改的）⇒ 开关显示跟着变
+          //
+          // 为什么用轮询而不是 sessionProjections：
+          //   投影是「宿主 → 客户端」的单向通道，本该更优雅，但它的 apply() 只在
+          //   会话事件时触发，而「条款被 complete 顶掉」发生在 system-prompt/assemble
+          //   （构造模型请求时），未必产生会话事件。该通道的刷新时机我**未验证过**，
+          //   而「强绑定」要求实际状态一变显示立刻跟着变 —— 用未验证的通道给不了这个
+          //   保证。GET /state 是我实测过、字段正确、稳定返回 200 的接口。
+          //
+          // 纪律：**宿主是唯一真相**。本地 enabled 只作乐观显示，每次拉取以宿主为准覆盖；
+          //   轮询失败不改显示（网络抖动不该让按钮乱跳）；shadowed 一并带回。
+          var shadowedPair = react.useState(false);
+          var shadowed = shadowedPair[0];
+          var setShadowed = shadowedPair[1];
+
           react.useEffect(function () {
             var alive = true;
-            pullEnabled().then(function (host) {
-              if (!alive || host === null) return;
-              setEnabled(host);
-              writeEnabled(host);
-            });
-            return function () { alive = false; };
+            var POLL_MS = 2000;
+
+            function syncFromHost() {
+              return pullState().then(function (host) {
+                if (!alive || host === null) return;   // 失败 ⇒ 保持当前显示，不乱跳
+                setEnabled(host.clause);
+                writeEnabled(host.clause);
+                setShadowed(host.shadowed);
+                setPushFailed(false);
+              });
+            }
+
+            syncFromHost();                             // 挂载即对齐一次
+            var timer = window.setInterval(syncFromHost, POLL_MS);
+            return function () {
+              alive = false;
+              window.clearInterval(timer);
+            };
           }, []);
 
           // 已宣告过的最新快照，供 effect 里读取而不重新订阅
@@ -497,6 +565,15 @@
           }, [draft]);
 
           function toggle() {
+            // 被 complete 顶掉时，点开关先弹说明 —— 因为此时点击【不会】让条款生效，
+            // 不解释就是让用户白点。弹完照常执行切换（用户仍有权改开关意图）。
+            if (shadowed) {
+              try {
+                window.alert(SHADOWED_NOTICE);
+              } catch (e) {
+                /* 弹窗失败不影响开关本身 */
+              }
+            }
             var next = !enabled;
             // 先翻本地语义（按钮立刻响应），再推宿主。
             // 推送失败不回滚本地 —— 回滚会让按钮在慢网下跳动；失败如实降级显示。
@@ -507,10 +584,11 @@
               setPushFailed(!ok);
               if (ok) {
                 // 推送成功即条款已增删，重新拉一次宿主真值对齐。
-                pullEnabled().then(function (host) {
-                  if (host === null || host === next) return;
-                  setEnabled(host);
-                  writeEnabled(host);
+                pullState().then(function (host) {
+                  if (host === null) return;
+                  setEnabled(host.clause);
+                  writeEnabled(host.clause);
+                  setShadowed(host.shadowed);
                   setPushFailed(false);
                 });
               }
@@ -534,9 +612,15 @@
           var words = armor && Array.isArray(armor.words) ? armor.words : [];
           var domain = armor && armor.domain ? armor.domain : null;
 
+          // 四态。优先级：未激活 > 被顶掉 > 报警 > 已激活。
+          //
+          // 为什么「被顶掉」排在「已激活」之前：开关是开的，但条款实际没进提示词 ——
+          // 这时显示绿色就是在撒谎。灰色 + 说明才是如实。
           var state = "off";
           if (!enabled) {
             state = "off";
+          } else if (shadowed) {
+            state = "shadowed";
           } else {
             var verdict = lastVerdictRef.current;
             var alarming =
@@ -569,6 +653,7 @@
             "aria-pressed": enabled ? "true" : "false",
             "data-sovereign": state,
             "data-sovereign-push": pushFailed ? "failed" : "ok",
+            "data-sovereign-shadowed": shadowed ? "1" : "0",
           }, react.createElement("span", { className: "dsh-sov-dot", style: dotStyle }));
         }
 

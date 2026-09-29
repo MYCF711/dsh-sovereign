@@ -2,8 +2,8 @@
   "name": "dsh-sovereign",
   "version": "0.5.0",
   "description": {
-    "zh": "DSH 宿主平面主权条款与内容守卫：系统提示词末节注入 + 工具结果脱敏 + 可逆性闸门。对全部 agent preset 生效。条款即主权能力本身：裁定权归用户、对外防御（抗注入）。不含风险提示。",
-    "en": "Host-plane sovereignty clause and content guard for DSH: last-section system-prompt injection, tool-result sanitization, and a reversibility gate. Applies to every agent preset. The clause IS the sovereignty capability: user-held adjudication plus outward defense (anti-injection). No risk notices."
+    "zh": "DSH 宿主平面主权条款与内容守卫：把主权条款注入系统提示词末节，清洗工具结果中的凭据与隐蔽载体，按可逆性裁决危险操作，并提供可即时切换的功能开关（点开即生效，无需重启）。对全部 agent preset 生效，不依赖任何特定模式。",
+    "en": "Host-plane sovereignty clause and content guard for DSH: injects the sovereignty clause as the last system-prompt section, sanitizes credentials and hidden carriers out of tool results, gates dangerous operations by reversibility, and exposes a live feature switch that takes effect immediately without a restart. Applies to every agent preset, not one."
   },
   "language": {
     "default": "zh",
