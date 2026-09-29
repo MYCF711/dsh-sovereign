@@ -40,7 +40,12 @@
 import { readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
 
 export const name = "dsh-sovereign";
-export const inject = ["tools", "systemPrompt"];
+// `webServer` 必须在这里声明 —— Cordis 的服务访问受 inject 门控，未声明的服务
+// `ctx.get()` 拿不到（返回 undefined），而不是抛错。省略它的后果是 FACE 6 的路由
+// 静默不注册：apply() 照常跑完、成功日志照常打印，只有 HTTP 端点 404。
+// 范式来自 dsh-image-gen：它的 inject 数组里含 "webServer"（lib/index.js:21229-21233），
+// 之后才用 ctx.webServer.register(...)。
+export const inject = ["tools", "systemPrompt", "webServer"];
 
 // ── the clause text ─────────────────────────────────────────────────────────
 //
@@ -1441,7 +1446,37 @@ const EMPTY_CLAUSE = Object.freeze({
 
 // 条款段的注册序号。与 FACE 1 的 section 注册共用同一个常量，
 // 保证浮层显示的 order 与真实注册值不可能漂移。
-const SECTION_ORDER = 10250;
+//
+// ── 为什么不再是 10250（2026-09-29 修正）──────────────────────────────
+//
+// 原值 10250 是 v0.4.0 时按「仓库自身最高 10100(WEB_SURFACE) + 10200
+// (DEPLOYMENT_PERSONA_SUFFIX) 之后再留余量」定的。**那是一个编译期常量，
+// 只在作者当时的安装组合下成立。**
+//
+// 实测反例（同一台机器，用户后来自己装了新插件）：
+//   -1000 HARNESS_IDENTITY            仓库
+//   10100 WEB_SURFACE                 仓库
+//   10200 DEPLOYMENT_PERSONA_SUFFIX   仓库
+//   10250 sovereign:clause            ← 本插件，被后面这些挤到中间
+//   10260 wb-fusion                   第三方
+//   10300 dsh-chinese-language        第三方
+//   10500 user:baseline-five          第三方（用户后装，已排在本插件之后）
+//
+// 「近因是唯一可用的位置优势」这个理由，在 10500 出现的那一刻就失效了。
+//
+// ── 修法：不猜别人的 order，直接取最大值 ──────────────────────────────
+//
+// 依据（dsh-system-prompt/lib/index.js）：
+//   :97-99  comparePromptSections(a, b) { return a.order - b.order || compareNames(...) }
+//           —— 纯数值减法，无上限、无白名单
+//   :241    if (!Number.isFinite(section.order)) throw ...
+//           —— 注册只校验有限性
+//
+// ⇒ 任何有限数都合法，取极大值即「永远排最后」，与任何人的安装组合无关。
+//
+// 减 1 而非直接用 MAX_SAFE_INTEGER：留一个位置给「万一还有插件想排更后」，
+// 且避免任何算术边界上的意外。
+export const SECTION_ORDER = Number.MAX_SAFE_INTEGER - 1;
 
 // 从真实的 PromptAssembly 里提取条款元数据。
 // assembled.sections 每项形状（dsh-system-prompt/lib/index.js:308-358）：
@@ -1703,12 +1738,27 @@ export function switchSnapshot(state) {
     file: switchFilePath(),
     registered: typeof state.disposer === "function",
     clauseChars: CLAUSE.length,
+    order: SECTION_ORDER,
+    // 真：开关为「开」且 section 已注册，但制品里找不到条款段 —— 通常是被别的
+    // 插件的 `complete: true` section 吞掉了（assemble 的 complete 处理在
+    // waterfall 之后，本插件无法对抗）。如实暴露，不静默。
+    shadowed: state.clauseShadowed === true,
   };
 }
 
 function armSwitchRoutes(state) {
   const webServer = state.ctx.get("webServer");
-  if (webServer === undefined || webServer === null) return undefined;
+  if (webServer === undefined || webServer === null) {
+    // 不再静默早退。缺 webServer 时路由一条都注册不上，但 apply() 会照常跑完 ——
+    // 这个「成功日志 + 404 端点」的组合骗过了一整轮排查，所以这里必须报错。
+    // 常见成因：inject 数组里漏了 "webServer"（Cordis 的服务访问受 inject 门控）。
+    console.error(
+      "[sovereign] FACE 6 disabled: ctx.get(\"webServer\") returned "
+      + String(webServer)
+      + " — the switch endpoints will 404. Check that inject includes \"webServer\".",
+    );
+    return undefined;
+  }
 
   const offState = webServer.register({
     kind: "exact",
@@ -1759,6 +1809,13 @@ function armSwitchRoutes(state) {
   });
 
   return combineDisposers([offState, offSwitch]);
+}
+
+/** 记录 FACE 6 的注册结果，供启动日志如实报告。 */
+function armSwitchRoutesTracked(state) {
+  const dispose = armSwitchRoutes(state);
+  state.routesArmed = dispose !== undefined;
+  return dispose;
 }
 
 // ── FACE 7 — 请求级开关（真正的即时生效） ────────────────────────────────────
@@ -1835,7 +1892,35 @@ export function armRequestGate(state) {
       // 读状态失败时**保留条款**：这是主权能力，宁可多注入也不能因读取异常而消失。
       live = true;
     }
-    if (live) return next();
+
+    // ── 冲突检测：开关是「开」，但条款段不在 sections 里 ──────────────────
+    //
+    // 成因：别的插件注册了 `complete: true` 的 section。`assemble()` 的处理顺序是
+    //   :355  waterfall（本函数在这里）
+    //   :356-361  之后若 completeSection 存在，则 sections 被整体替换为 [completeSection]
+    // ⇒ 本插件插进去的段会被吞掉。
+    //
+    // dsh-system-prompt/lib/types/index.d.ts:36-45 显示 AssembleContext 只有
+    // `scope` 与 `signal` 两个字段，**没有对抗 complete 的合法挂点**。
+    // 硬碰是错的：complete 是别人的合法选择，两个插件互相覆盖只会两败俱伤。
+    //
+    // 所以这里只做一件事：**如实记录**。由 /state 暴露给用户，绝不装作正常 ——
+    // 让「开关开着但条款实际不在提示词里」这种状态可被看见，而不是静默失效。
+    if (live) {
+      const sections = assembly !== null && typeof assembly === "object" && Array.isArray(assembly.sections)
+        ? assembly.sections
+        : null;
+      if (sections !== null) {
+        const mine = sections.some(
+          (s) => s !== null && typeof s === "object" && s.name === "sovereign:clause",
+        );
+        // 只有「已注册却不在结果里」才算冲突；已注册且在场是正常。
+        state.clauseShadowed = !mine && state.disposer !== undefined;
+      } else {
+        state.clauseShadowed = false;
+      }
+      return next();
+    }
 
     const sections = assembly === null || typeof assembly !== "object" || !Array.isArray(assembly.sections)
       ? null
@@ -1856,7 +1941,7 @@ export function apply(ctx) {
   // 先读持久化状态，再按状态决定 clause section 的生死。
   const state = makeSwitchState(ctx);
   loadSwitchState(state);
-  ctx.effect(() => armSwitchRoutes(state));
+  ctx.effect(() => armSwitchRoutesTracked(state));
   ctx.effect(() => {
     syncClauseSection(state);
     return () => {
@@ -1947,5 +2032,10 @@ export function apply(ctx) {
     return off;
   });
 
-  console.log("[sovereign] clause injected at order 10250; sanitizer, gate and refusal projection armed");
+  console.log(
+    "[sovereign] clause section "
+    + (typeof state.disposer === "function" ? "REGISTERED" : "NOT registered")
+    + " at order " + SECTION_ORDER + "; sanitizer, gate, request-gate and refusal projection armed; "
+    + "switch endpoints: " + (state.routesArmed === true ? "ARMED" : "MISSING (see error above)"),
+  );
 }

@@ -186,7 +186,21 @@ let host = boot();
 check("T1 apply() 注册了条款 section", host.systemPrompt.sections.has(SECTION));
 check("T1 section 文本就是 CLAUSE 本体", host.systemPrompt.sections.get(SECTION)?.text === CLAUSE,
   `len=${host.systemPrompt.sections.get(SECTION)?.text?.length}`);
-check("T1 section order = 10250", host.systemPrompt.sections.get(SECTION)?.order === 10250);
+// 断言从「等于某个硬编码值」改为「大于任何已知插件的 order」。
+//
+// 为什么改：原断言写死 10250，而那个值只在作者当时的安装组合下成立。
+// 实测反例（本机）：10500(user:baseline-five) 已排在 10250 之后，
+// 也就是说 10250 早就不是「最后一个」。
+// 现在取 SECTION_ORDER = MAX_SAFE_INTEGER - 1，语义是「永远排最后」——
+// 断言应该表达那个语义，而不是记住一个数字。
+const KNOWN_HIGHEST_OTHER_ORDER = 10500; // user:baseline-five，实测见 README
+const mineOrder = host.systemPrompt.sections.get(SECTION)?.order;
+check(
+  "T1 section order 大于任何已知插件的 order",
+  typeof mineOrder === "number" && mineOrder > KNOWN_HIGHEST_OTHER_ORDER,
+  `order=${mineOrder}`,
+);
+
 
 const s1 = await call(host.webServer, ROUTE_STATE, "GET");
 check("T2 GET /state 返回 200", s1.status === 200, `got ${s1.status}`);

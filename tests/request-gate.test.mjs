@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { apply, CLAUSE, switchFilePath } from "../index.js";
 
 const ROUTE_SWITCH = "/plugins/dsh-sovereign/switch";
+const ROUTE_STATE = "/plugins/dsh-sovereign/state";
 const SECTION = "sovereign:clause";
 
 // ── 隔离：sidecar 指向临时目录，绝不碰真实 profile 状态 ─────────────────────
@@ -272,6 +273,49 @@ check("T11 再打开 ok", onRes.json?.ok === true);
 const after2 = await runWaterfall(host3, makeAssembly());
 check("T11 再打开后：条款回来", namesOf(after2).includes(SECTION));
 
+// ── T12 影子检测：被别人 complete 吞掉时必须如实报告，不得静默 ──────────────
+//
+// 背景：assemble() 的处理顺序是 waterfall(:355) → complete 覆盖(:356-361)。
+// 别的插件注册 `complete: true` 时，sections 会被整体替换成只留它自己，
+// 本插件的段随之消失。AssembleContext 只有 scope/signal（types/index.d.ts:36-45），
+// **没有对抗 complete 的合法挂点** —— 硬碰是错的。
+//
+// 所以本插件只做「如实记录」：开关为开、section 已注册，但制品里找不到条款段，
+// 就把 shadowed 置真并由 /state 暴露。这样「开关开着但实际没生效」可被看见。
+console.log("--- T12 影子检测：被 complete 吞掉时如实报告 ---");
+clean();
+const host4 = boot();
+writeFileSync(stateFile, JSON.stringify({ version: 1, clause: true }), "utf8");
+utimesSync(stateFile, new Date(), new Date(Date.now() + 90000));
+
+// 12a 正常情况：条款在场 ⇒ shadowed=false
+const normal = await runWaterfall(host4, makeAssembly());
+check("T12a 正常时条款在场", namesOf(normal).includes(SECTION));
+const stateNormal = await callState(host4);
+check("T12a /state 报 shadowed=false", stateNormal.json?.shadowed === false,
+  `shadowed=${stateNormal.json?.shadowed}`);
+
+// 12b 模拟被 complete 吞掉：制品里只有别人的完整体
+const hijacked = {
+  sections: [{ name: "other:complete", text: "别人的完整体，把其余 section 全顶掉了。" }],
+  contexts: [], tools: [], variables: {},
+};
+const hijackedOut = await runWaterfall(host4, hijacked);
+check("T12b 制品里条款确实不在", namesOf(hijackedOut).includes(SECTION) === false);
+
+const stateShadowed = await callState(host4);
+check("T12b /state 报 shadowed=true（如实暴露，不静默）",
+  stateShadowed.json?.shadowed === true, `shadowed=${stateShadowed.json?.shadowed}`);
+check("T12b 同时 registered 仍为 true（section 确实还注册着）",
+  stateShadowed.json?.registered === true);
+
+// 12c 恢复：条款回来 ⇒ shadowed 归假
+const restored = await runWaterfall(host4, makeAssembly());
+check("T12c 条款恢复", namesOf(restored).includes(SECTION));
+const stateRestored = await callState(host4);
+check("T12c /state 报 shadowed=false（状态不滞留）",
+  stateRestored.json?.shadowed === false, `shadowed=${stateRestored.json?.shadowed}`);
+
 // ── 收尾 ────────────────────────────────────────────────────────────────────
 clean();
 try {
@@ -304,6 +348,47 @@ async function callSwitch(host, clause) {
     for (const fn of listeners.data ?? []) fn(buf);
     for (const fn of listeners.end ?? []) fn();
   });
+  let resolveFn;
+  const finished = new Promise((r) => {
+    resolveFn = r;
+  });
+  const res = {
+    statusCode: 0,
+    body: "",
+    writeHead(code) {
+      res.statusCode = code;
+      return res;
+    },
+    end(t) {
+      res.body = t ?? "";
+      resolveFn();
+    },
+  };
+  await route.handler(req, res);
+  await finished;
+  let json = null;
+  try {
+    json = JSON.parse(res.body);
+  } catch {
+    /* 非 JSON */
+  }
+  return { status: res.statusCode, json };
+}
+
+/** 调 GET /state（res/req 最小替身，只读，无请求体）。 */
+async function callState(host) {
+  // 直接用字面量而非 ROUTE_STATE 常量：本函数是函数声明（会被提升），
+  // 而 ROUTE_STATE 是顶部 const（处于 TDZ），在某些调用时序下取不到。
+  const route = host.get("webServer").routes.get("exact:/plugins/dsh-sovereign/state");
+  if (route === undefined) return { status: 0, json: null };
+  const req = {
+    method: "GET",
+    url: "/",
+    on() {
+      return req;
+    },
+    destroy() {},
+  };
   let resolveFn;
   const finished = new Promise((r) => {
     resolveFn = r;
