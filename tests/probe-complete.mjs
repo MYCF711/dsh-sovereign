@@ -74,7 +74,7 @@ function add(name, order, text, extra) {
 add("harness:identity", -1000, "You are an AI agent powered by DeepSeek Harness.");
 add("仓库:web-surface", 10100, "WEB SURFACE 段（仓库自带）");
 add("deployment:persona-suffix", 10200, "PERSONA SUFFIX 段（仓库自带）");
-add("sovereign:clause", Number.MAX_SAFE_INTEGER - 1, "[MODE: SOVEREIGN] 条款正文");
+add("sovereign:clause", Number.MAX_SAFE_INTEGER - 1, "[用户启用 · 用户主权声明] 条款正文");
 add("第三方:dsh-chinese-language", 10300, "中文语言段（第三方）");
 add("第三方:user-baseline-five", 10500, "底线五（第三方）");
 

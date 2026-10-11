@@ -207,7 +207,7 @@ check("T2 GET /state 返回 200", s1.status === 200, `got ${s1.status}`);
 check("T2 ok=true", s1.json?.ok === true);
 check("T2 clause=true", s1.json?.clause === true);
 check("T2 registered=true", s1.json?.registered === true);
-check("T2 clauseChars=3339", s1.json?.clauseChars === 3339, `got ${s1.json?.clauseChars}`);
+check("T2 clauseChars=3232", s1.json?.clauseChars === 3232, `got ${s1.json?.clauseChars}`);
 
 // ── T3/T4 关闭 ⇒ section 真消失 ─────────────────────────────────────────────
 console.log("--- T3/T4 关闭 ⇒ section 从注册表消失（关掉=0 token 的实证）---");
@@ -224,7 +224,7 @@ check("T3 clause=false", off.json?.clause === false);
 const s2 = await call(host.webServer, ROUTE_STATE, "GET");
 check("T4 关闭后 GET /state 仍 200", s2.status === 200, `got ${s2.status}`);
 check("T4 registered=false", s2.json?.registered === false);
-check("T4 clauseChars 仍报 3339（条款本体未被修改）", s2.json?.clauseChars === 3339);
+check("T4 clauseChars 仍报 3232（条款本体未被修改）", s2.json?.clauseChars === 3232);
 
 // ── T5 重新打开 ─────────────────────────────────────────────────────────────
 console.log("--- T5 重新打开 ⇒ section 回来 ---");

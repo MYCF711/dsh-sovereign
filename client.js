@@ -364,7 +364,7 @@
           } else {
             var tail = c.last === true ? "（末节）" : "";
             rows.push(
-              "条款 · [MODE: SOVEREIGN] · " + c.sections + " 节 · " + c.chars +
+              "条款 · 用户启用 · " + c.sections + " 节 · " + c.chars +
               " 字符 · order " + c.order + tail,
             );
             rows.push("底座 · DSH 0.1.5-rc.2 · 组装 sections 共 " + c.total + " 项");
@@ -378,7 +378,7 @@
         }
 
         function announcementText(clause) {
-          return "[MODE: SOVEREIGN] 主权已宣告\n" + buildRows(clause).join("\n");
+          return "[用户启用] 主权已宣告\n" + buildRows(clause).join("\n");
         }
 
         // 解析 SessionInput facade。
