@@ -8,6 +8,143 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-09-29
+
+### Fixed — section order 写死了，那是一个错的常量
+
+**问题**：`export const SECTION_ORDER = 10250;` 的推导是
+「`SECTION_ORDERS` 里 `DEPLOYMENT_PERSONA_SUFFIX = 10200` 是仓库最高的」——
+但那是**作者当时的安装组合**，不是 DSH 的保证。
+
+用户后装插件后本机实测：
+
+```
+10100 WEB_SURFACE                 仓库
+10200 DEPLOYMENT_PERSONA_SUFFIX   仓库
+10250 sovereign:clause            ← 本插件，被后面这些挤到中间
+10260 wb-fusion                   第三方
+10300 dsh-chinese-language        第三方
+10500 user:baseline-five          第三方（用户后装）
+```
+
+「10250 排在所有 section 之后」在这台机器上已失效。而 `10500` 是**用户后装**的 ⇒
+只要用户再装一个插件，位置优势就可能被夺走。
+
+**修法**：不猜别人的 order，直接取极大值。
+
+```js
+export const SECTION_ORDER = Number.MAX_SAFE_INTEGER - 1;
+```
+
+依据（读源码，非推测）`dsh-system-prompt/lib/index.js`：
+- `:97-99` `comparePromptSections(a, b) { return a.order - b.order || compareNames(...) }`
+  —— 纯数值减法，**无上限、无白名单**
+- `:241` 只校验 `Number.isFinite(section.order)`
+
+⇒ 任何有限数都合法，**取极大值即「永远排最后」，与任何人的安装组合无关**。
+减 1 而非直接用 `MAX_SAFE_INTEGER`：留一个位置，且避开算术边界。
+
+### Added — 影子检测：`complete: true` 侵占时如实报告
+
+**第二个洞，与 order 多大无关**：`assemble()` 的顺序是
+waterfall(`:355`) → complete 覆盖(`:356-361`)，后者把 sections 整体替换为
+`[completeSection]`。别的插件一旦用 `complete: true`，本插件的段会被吞掉。
+
+`AssembleContext` 只有 `scope` / `signal`（`types/index.d.ts:36-45`），
+**没有对抗 complete 的合法挂点**，且硬碰是错的（那是别人的合法选择）。
+
+⇒ 改为**如实报告，不静默失效**：开关为开、section 已注册、但制品里找不到自己的段时，
+置 `state.clauseShadowed`，由 `GET /state` 的 `shadowed` 字段暴露，
+客户端显示为**灰色**（绿色会撒谎）。
+
+测试新增 T12 影子检测（6 项断言）：
+- T12a 正常 `shadowed=false`
+- T12b 被 complete 吞掉 `shadowed=true`，且 `registered` 仍 `true`
+- T12c 恢复后 `shadowed` 归假（状态不滞留）
+
+### Changed — 开关与宿主双向绑定（四态）
+
+`client.js`：每 2 秒 `GET /state` → `{clause, registered, shadowed}`。
+与本地显示不同则立即更新；用户点击 → `POST /switch` → 立即重拉确认。
+
+三条纪律：
+- **宿主是唯一真相** —— 本地 `enabled` 只作乐观显示，每次拉取以宿主为准覆盖
+- **轮询失败不改显示** —— 网络抖动不该让按钮乱跳
+- **被顶掉时显示灰色** —— 绿色会撒谎
+
+**第四态 `shadowed`**，优先级：未激活 > 被顶掉 > 报警 > 已激活。
+被顶掉排在已激活之前：开关开着但条款没进提示词时，绿色就是在撒谎。
+点击时先弹说明（解释成因与排除做法），**弹完照常执行切换 —— 不拦截操作权**。
+
+**为什么用轮询而非 `sessionProjections`**：投影是宿主→客户端单向通道，本该更合适。
+但其 `apply()` 只在会话事件时触发，而「被 complete 顶掉」发生在
+`system-prompt/assemble`（构造模型请求时），未必产生会话事件；
+该通道的刷新时机**未经验证**（全工程仅本插件在用 `useProjection`，无范例）。
+强绑定要求实际状态一变显示立刻跟着变，用未验证的通道给不了这个保证。
+`GET /state` 是实测过、稳定返回 200 的接口。**轮询笨，但确定。**
+
+### Changed — 模块级状态跨实例泄漏的修复（已在 0.5.0 内修）
+
+> 此条原仅记于 0.5.0 正文；0.6.0 起在此立目，便于检索。
+
+首版 FACE 6 用模块级 `clauseDisposer` / `hostCtx` / `clauseEnabled`。
+`tests/hot-switch.test.mjs` 首次运行 `pass=38 fail=11`：第二次 `apply()` 时
+`clauseDisposer` 仍是上一次留下的函数 ⇒ 走「已注册，不重复注册」早退分支 ⇒
+**section 被注册到已废弃的旧 `systemPrompt` 实例上，新宿主一个 section 都没拿到。**
+
+症状是最坏的一类：**日志照打「已注册」，提示词里却没有条款。**
+真实场景同样中招（热重载、多 agent scope 都会重复调用 `apply()`）。
+
+修法：状态改为 `makeSwitchState(ctx)` 造的 **per-apply 闭包对象**，路由处理器经闭包捕获。
+
+### Changed — 启动日志文本
+
+`[sovereign] clause injected at order 10250; ...`
+→ `[sovereign] clause section REGISTERED at order <runtime max>; ... switch endpoints: ARMED`
+
+理由：旧文案把「已注入」当结论报，而它**只能在注册那一刻为真** ——
+被 complete 顶掉、或注册到废弃实例上时它照样打印。新文案只报三件可核验的事：
+section 是否 `REGISTERED`、order 实际值、开关端点是否 `ARMED`。
+「条款真的在提示词里」由 `/state` 的 `shadowed` 判定，不由日志判定。
+
+### Added — `tests/probe-apply.mjs`
+
+用真实 `@deepseek-ai/cordis` 跑 `apply()` 的探针。
+假 `ctx` 不会复现真实门控行为（effect 返回值语义、`inject` 门控抛错时机），
+本探针补上这一层。
+
+### Changed — `package.json`
+
+- `files` 补 `manifest.json` / `CHANGELOG.md` / `tests`
+  （原先只列 `index.js` / `client.js` / `cordis.patch.yml` / `README.md`，
+  git 直装时会缺文件）
+- 补 `peerDependencies`: `@deepseek-ai/cordis: ">=4.0.0 <5"`
+  —— 本插件唯一实际 import 的框架包，范围与 `dsh-image-gen` 一致
+- `description` 改为中文，并更新到 v0.5.0 的实际能力（原英文描述停在旧版，未提及 FACE 6/7）
+- `cordis.patch.yml`（profile 层）新增 `dsh-sovereign` 锚点（`disabled: false`，行为 no-op）
+
+### 测试
+
+`suites=14  suites_failed=0`，合计 **450 项断言**。
+
+本轮新增 T12 影子检测 6 项；`hot-switch.test.mjs` 的 order 断言由
+「等于 10250」改为「**大于任何已知插件的 order**」——
+断言应表达语义，而不是记住一个数字。
+
+> **口径更正（对 v0.5.0 正文）**：
+> v0.5.0 正文写 `suites=14 suites_failed=0`，但 README 写「12 套件 / 357 项」，
+> 两处自相矛盾。
+> 本次逐套件复跑并读各套件自己的 `pass=` 汇总行，实测为 **14 套件 / 450 项**。
+> 其中 `hot-switch` 现 49 项（0.5.0 正文记 49）、`request-gate` 现 44 项
+> （0.5.0 正文记 37 —— 该套件此后有增补，正文未同步）。
+> **两处数字都以本次实测为准。**
+
+> `tests/run-all.mjs` **只汇总 `*.test.mjs`**；`probe-apply.mjs` / `probe-bearer.mjs` /
+> `probe-complete.mjs` 与 `retired-v31-compression-awareness.mjs` 是独立脚本，
+> **不计入 450**。
+
+---
+
 ## [0.5.0] — 2026-09-27
 
 ### Added — 功能开关：从「指示灯」变成真正的断路器

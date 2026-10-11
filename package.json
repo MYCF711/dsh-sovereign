@@ -1,6 +1,6 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "DSH 宿主平面主权条款与内容守卫：把主权条款注入系统提示词末节，清洗工具结果中的凭据与隐蔽载体，按可逆性裁决危险操作，并提供可即时切换的功能开关（点开即生效，无需重启）。对全部 agent preset 生效，不依赖任何特定模式。",
   "license": "MIT",
   "type": "module",
@@ -39,8 +39,8 @@
   "dsh": {
     "id": "dsh-sovereign",
     "name": "主权条款",
-    "version": "0.5.0",
-    "permissions": "系统提示词注入(末节), 工具结果清洗, 危险操作前置裁决, 客户端主权开关, 开关热切换(请求级)",
+    "version": "0.6.0",
+    "permissions": "系统提示词注入(末节), 工具结果清洗, 危险操作前置裁决, 客户端主权开关, 开关热切换(请求级), 影子检测(被 complete 顶掉时如实上报)",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

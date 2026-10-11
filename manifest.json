@@ -1,6 +1,6 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": {
     "zh": "DSH 宿主平面主权条款与内容守卫：把主权条款注入系统提示词末节，清洗工具结果中的凭据与隐蔽载体，按可逆性裁决危险操作，并提供可即时切换的功能开关（点开即生效，无需重启）。对全部 agent preset 生效，不依赖任何特定模式。",
     "en": "Host-plane sovereignty clause and content guard for DSH: injects the sovereignty clause as the last system-prompt section, sanitizes credentials and hidden carriers out of tool results, gates dangerous operations by reversibility, and exposes a live feature switch that takes effect immediately without a restart. Applies to every agent preset, not one."
@@ -77,25 +77,26 @@
     ]
   },
   "verify": {
-    "bootLog": "[sovereign] clause injected at order 10250; sanitizer, gate and refusal projection armed",
+    "bootLog": "[sovereign] clause section REGISTERED at order <runtime max: Number.MAX_SAFE_INTEGER - 1>; sanitizer, gate, request-gate and refusal projection armed; switch endpoints: ARMED",
     "clauseLength": 3339,
     "clauseSha256Example": "run: node -e \"import('./index.js').then(m=>console.log(require('crypto').createHash('sha256').update(m.CLAUSE).digest('hex').toUpperCase()))\"",
-    "zh": "重启后确认启动日志出现；再用上面的命令算 CLAUSE 的 SHA256，与实际注入的末节逐字节比对。",
-    "en": "After restarting, confirm the boot log line appears; then hash CLAUSE with the command above and compare byte-for-byte with the injected final section."
+    "stateProbe": "GET /plugins/dsh-sovereign/state -> { clause, registered, shadowed, ... }. 判「条款真的在提示词里」看 shadowed；日志只报注册与路由是否挂上，报不了这件事。",
+    "zh": "重启后确认启动日志出现；再用上面的命令算 CLAUSE 的 SHA256，与实际注入的末节逐字节比对。日志文本跨版本变动过，不要把发布自检绑死在日志字面上——用 /state 探针。",
+    "en": "After restarting, confirm the boot log line appears; then hash CLAUSE with the command above and compare byte-for-byte with the injected final section. The log text has changed across versions, so do not pin a release check to its wording — probe /state instead."
   },
   "test": {
     "command": "node tests/run-all.mjs",
-    "suites": 12,
-    "assertions": 357,
-    "note_zh": "子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
-    "note_en": "Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
+    "suites": 14,
+    "assertions": 450,
+    "note_zh": "只汇总 *.test.mjs；probe-*.mjs 三个探针与 retired-v31-compression-awareness.mjs 是独立脚本，不计入。子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
+    "note_en": "Only *.test.mjs files are aggregated; the three probe-*.mjs scripts and retired-v31-compression-awareness.mjs are standalone and not counted. Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
   },
   "faces": [
-    { "id": 1, "hook": "systemPrompt.section", "order": 10250, "role": "static clause (last section of the system prompt)" },
+    { "id": 1, "hook": "systemPrompt.section", "order": "runtime max (Number.MAX_SAFE_INTEGER - 1)", "role": "static clause (last section of the system prompt)" },
     { "id": 2, "hook": "tools/post-execute", "role": "credential masking + hidden-carrier scrubbing" },
     { "id": 3, "hook": "tools/pre-execute", "role": "reversibility gate (PASS / ASK / DENY)" },
     { "id": 4, "hook": "sessionProjections", "role": "refusal score projection for the client toggle" },
-    { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture" },
+    { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture; also detects a shadowed clause" },
     { "id": 6, "hook": "webServer.register", "role": "switch endpoints + sidecar persistence; disposes or re-creates the clause section" },
     { "id": 7, "hook": "system-prompt/assemble", "role": "request-level clause filtering — the switch takes effect on the next model request, with no restart" }
   ]
