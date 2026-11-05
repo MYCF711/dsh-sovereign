@@ -408,11 +408,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**当前状态：14 套件 / 450 项全 PASS**（`suites=14 suites_failed=0`，退出码 0）。
+**当前状态：14 套件 / 453 项全 PASS**（`suites=14 suites_failed=0`，退出码 0）。
 
 | 套件 | 项数 | 覆盖 |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **条款边界护栏**（见下） |
+| `boundary-sovereign-only.test.mjs` | **72** | **条款边界护栏**（见下） |
 | `d11-hidden-carriers.test.mjs` | 50 | D10 漏掉的 6 个不可见码点 + 11 种隐藏写法 |
 | `hot-switch.test.mjs` | 49 | FACE 6 路由语义、section 增删、sidecar 落盘、重启回放、损坏文件回落、畸形请求 |
 | `gate.test.mjs` | 45 | 三档裁决 + 大量「不许过度拦截」回归 |
@@ -493,7 +493,7 @@ dsh-sovereign/
 ├── manifest.json           ← 面清单 / 版本 / 能力声明
 ├── CHANGELOG.md            ← 详细变更记录
 ├── README.md               ← 本文件
-└── tests/                  ← 14 套件 / 450 项（+ 3 个探针脚本）
+└── tests/                  ← 14 套件 / 453 项（+ 4 个探针脚本）
 ```
 
 ---
@@ -843,11 +843,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**Current status: 14 suites / 450 assertions, all PASS** (`suites=14 suites_failed=0`, exit 0).
+**Current status: 14 suites / 453 assertions, all PASS** (`suites=14 suites_failed=0`, exit 0).
 
 | Suite | Count | Covers |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **the clause-boundary guard** (see below) |
+| `boundary-sovereign-only.test.mjs` | **72** | **the clause-boundary guard** (see below) |
 | `d11-hidden-carriers.test.mjs` | 50 | the 6 invisible code points D10 missed + 11 hidden spellings |
 | `hot-switch.test.mjs` | 49 | FACE 6 route semantics, section (de)registration, sidecar round-trip, restart replay, corrupt-file fallback, malformed requests |
 | `gate.test.mjs` | 45 | the three verdicts + heavy "must not over-block" regression |
@@ -938,7 +938,7 @@ dsh-sovereign/
 ├── manifest.json           ← face list / version / capability declaration
 ├── CHANGELOG.md            ← detailed change log
 ├── README.md               ← this file
-└── tests/                  ← 14 suites / 450 assertions (+ 3 probe scripts)
+└── tests/                  ← 14 suites / 453 assertions (+ 4 probe scripts)
 ```
 
 ---
