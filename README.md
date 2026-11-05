@@ -427,9 +427,9 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 | `workspace-collision.test.mjs` | 16 | 工作区正常写入不被误拦 |
 | `sanitizer.test.mjs` | 14 | 凭据形状脱敏，散文不误伤 |
 
-> **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 三个探针
+> **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 四个探针
 > （真 `@deepseek-ai/cordis` 跑 `apply()`）与 `retired-v31-compression-awareness.mjs`
-> 是独立脚本，**不计入 450 项**。
+> 是独立脚本，**不计入 453 项**。
 
 **`boundary-sovereign-only.test.mjs` 是条款变更的安全网。** 它守七件事：
 
@@ -862,9 +862,9 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 | `workspace-collision.test.mjs` | 16 | ordinary workspace writes must not be blocked |
 | `sanitizer.test.mjs` | 14 | credential-shape masking; prose must survive |
 
-> **`tests/run-all.mjs` only aggregates `*.test.mjs`.** The three `probe-*.mjs` scripts
+> **`tests/run-all.mjs` only aggregates `*.test.mjs`.** The four `probe-*.mjs` scripts
 > (which run `apply()` against the real `@deepseek-ai/cordis`) and
-> `retired-v31-compression-awareness.mjs` are standalone and are **not** part of the 450.
+> `retired-v31-compression-awareness.mjs` are standalone and are **not** part of the 453.
 
 **`boundary-sovereign-only.test.mjs` is the safety net for clause changes.** It guards seven things:
 

@@ -24,6 +24,9 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0 <5"
   },
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
   "scripts": {
     "test": "node tests/run-all.mjs"
   },
