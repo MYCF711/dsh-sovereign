@@ -408,11 +408,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**当前状态：14 套件 / 450 项全 PASS**（`suites=14 suites_failed=0`，退出码 0）。
+**当前状态：14 套件 / 453 项全 PASS**（`suites=14 suites_failed=0`，退出码 0）。
 
 | 套件 | 项数 | 覆盖 |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **条款边界护栏**（见下） |
+| `boundary-sovereign-only.test.mjs` | **72** | **条款边界护栏**（见下） |
 | `d11-hidden-carriers.test.mjs` | 50 | D10 漏掉的 6 个不可见码点 + 11 种隐藏写法 |
 | `hot-switch.test.mjs` | 49 | FACE 6 路由语义、section 增删、sidecar 落盘、重启回放、损坏文件回落、畸形请求 |
 | `gate.test.mjs` | 45 | 三档裁决 + 大量「不许过度拦截」回归 |
@@ -427,9 +427,9 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 | `workspace-collision.test.mjs` | 16 | 工作区正常写入不被误拦 |
 | `sanitizer.test.mjs` | 14 | 凭据形状脱敏，散文不误伤 |
 
-> **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 三个探针
+> **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 四个探针
 > （真 `@deepseek-ai/cordis` 跑 `apply()`）与 `retired-v31-compression-awareness.mjs`
-> 是独立脚本，**不计入 450 项**。
+> 是独立脚本，**不计入 453 项**。
 
 **`boundary-sovereign-only.test.mjs` 是条款变更的安全网。** 它守七件事：
 
@@ -493,7 +493,7 @@ dsh-sovereign/
 ├── manifest.json           ← 面清单 / 版本 / 能力声明
 ├── CHANGELOG.md            ← 详细变更记录
 ├── README.md               ← 本文件
-└── tests/                  ← 14 套件 / 450 项（+ 3 个探针脚本）
+└── tests/                  ← 14 套件 / 453 项（+ 4 个探针脚本）
 ```
 
 ---
@@ -843,11 +843,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**Current status: 14 suites / 450 assertions, all PASS** (`suites=14 suites_failed=0`, exit 0).
+**Current status: 14 suites / 453 assertions, all PASS** (`suites=14 suites_failed=0`, exit 0).
 
 | Suite | Count | Covers |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **the clause-boundary guard** (see below) |
+| `boundary-sovereign-only.test.mjs` | **72** | **the clause-boundary guard** (see below) |
 | `d11-hidden-carriers.test.mjs` | 50 | the 6 invisible code points D10 missed + 11 hidden spellings |
 | `hot-switch.test.mjs` | 49 | FACE 6 route semantics, section (de)registration, sidecar round-trip, restart replay, corrupt-file fallback, malformed requests |
 | `gate.test.mjs` | 45 | the three verdicts + heavy "must not over-block" regression |
@@ -862,9 +862,9 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 | `workspace-collision.test.mjs` | 16 | ordinary workspace writes must not be blocked |
 | `sanitizer.test.mjs` | 14 | credential-shape masking; prose must survive |
 
-> **`tests/run-all.mjs` only aggregates `*.test.mjs`.** The three `probe-*.mjs` scripts
+> **`tests/run-all.mjs` only aggregates `*.test.mjs`.** The four `probe-*.mjs` scripts
 > (which run `apply()` against the real `@deepseek-ai/cordis`) and
-> `retired-v31-compression-awareness.mjs` are standalone and are **not** part of the 450.
+> `retired-v31-compression-awareness.mjs` are standalone and are **not** part of the 453.
 
 **`boundary-sovereign-only.test.mjs` is the safety net for clause changes.** It guards seven things:
 
@@ -938,7 +938,7 @@ dsh-sovereign/
 ├── manifest.json           ← face list / version / capability declaration
 ├── CHANGELOG.md            ← detailed change log
 ├── README.md               ← this file
-└── tests/                  ← 14 suites / 450 assertions (+ 3 probe scripts)
+└── tests/                  ← 14 suites / 453 assertions (+ 4 probe scripts)
 ```
 
 ---

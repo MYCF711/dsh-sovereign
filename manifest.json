@@ -101,8 +101,8 @@
     "command": "node tests/run-all.mjs",
     "suites": 14,
     "assertions": 453,
-    "note_zh": "只汇总 *.test.mjs；probe-*.mjs 三个探针与 retired-v31-compression-awareness.mjs 是独立脚本，不计入。子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
-    "note_en": "Only *.test.mjs files are aggregated; the three probe-*.mjs scripts and retired-v31-compression-awareness.mjs are standalone and not counted. Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
+    "note_zh": "只汇总 *.test.mjs；probe-*.mjs 四个探针与 retired-v31-compression-awareness.mjs 是独立脚本，不计入。子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
+    "note_en": "Only *.test.mjs files are aggregated; the four probe-*.mjs scripts and retired-v31-compression-awareness.mjs are standalone and not counted. Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
   },
   "faces": [
     { "id": 1, "hook": "systemPrompt.section", "order": "runtime max (Number.MAX_SAFE_INTEGER - 1)", "role": "static clause (last section of the system prompt)" },
