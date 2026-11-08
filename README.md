@@ -1,6 +1,6 @@
 # dsh-sovereign
 
-**v0.7.0** · Host-plane sovereignty clause + content guard for [DSH (DeepSeek Harness)](https://github.com/deepseek-ai)
+**v0.8.0** · Host-plane sovereignty clause + content guard for [DSH (DeepSeek Harness)](https://github.com/deepseek-ai)
 
 > 宿主平面主权条款与内容守卫 · 挂在 profile 的 bundle 层 · **对全部 agent preset 生效**
 >
@@ -18,13 +18,13 @@
 |---|---|---|
 | **面 1** | `systemPrompt.section` | 把主权条款作为**系统提示词的最后一节**注入 |
 | **面 2** | `tools/post-execute` | 清洗进入上下文的工具结果（凭据脱敏 + 隐蔽载体剥离） |
-| **面 3** | `tools/pre-execute` | 按**可逆性**裁决危险操作（PASS / ASK / DENY） |
+| **面 3** | `tools/pre-execute` | 按**可逆性**裁决危险操作（PASS / DENY） |
 | **面 4** | `sessionProjections` | 拒答评分投影，驱动客户端开关的报警态 |
 | **面 5** | `system-prompt/assemble` | **只读**捕获条款元数据，供客户端显示真实组装结果 |
 | **面 6** | `webServer.register` | 开关端点 + sidecar 持久化；注册表级增删条款段 |
 | **面 7** | `system-prompt/assemble` | 请求级条款过滤 —— 开关在**下一个模型请求**生效，无需重启 |
 
-客户端半（`client.js`）另加一个输入框左侧的主权开关（**四态**），以及正文内拒绝词高亮。
+客户端半（`client.js`）另加一个输入框左侧的主权开关（**五态**），以及正文内拒绝词高亮。
 
 ### 条款的构成：只有「主权能力」
 
@@ -266,16 +266,17 @@ Copy-Item -Recurse -Force .\dsh-sovereign "$profile\node_modules\dsh-sovereign"
 
 ### 功能开关（v0.5.0 起）
 
-输入框左侧的按钮**是真的断路器**，不再是指示灯。**四态**：
+输入框左侧的按钮**是真的断路器**，不再是指示灯。**五态**：
 
 | 状态 | 颜色 | 含义 |
 |---|---|---|
 | 未激活 | 灰 `#94a3b8` | 条款**不在**系统提示词里，每轮省下 3232 字符 |
 | 被顶掉 | 灰 `#94a3b8` | 开关为开、section 已注册，但组装制品里找不到条款段（通常被别的插件的 `complete: true` 顶掉） |
 | 检测到拒答 | 红 `#ef4444` | 已激活，且上一条回复被判拒答（8 秒后复位） |
+| 未完交付 | 橙 `#f59e0b` | 已激活，且上一条回复以省略收尾（`……` / `篇幅有限` / `剩下省略`）—— 交付是残的，绿色等于宣称完整 |
 | 已激活 | 绿 `#10b981` | 条款确实在提示词末节 |
 
-**四态优先级：未激活 > 被顶掉 > 报警 > 已激活。**
+**五态优先级：未激活 > 被顶掉 > 报警 > 未完交付 > 已激活。**
 「被顶掉」排在「已激活」之前 —— **开关开着但条款没进提示词时，绿色就是在撒谎。**
 
 **双向绑定**：客户端每 2 秒 `GET /state` 拉宿主真值 ——
@@ -384,15 +385,19 @@ node -e "import('./index.js').then(m=>console.log(require('crypto').createHash('
 该值应与实际注入的末节文本逐字节相同（条款长度 **3232** 字符，SHA256
 `001218CF76DCBE063717C5A8E28680FA748006AC497DC188AE8FE703BB4C7D84`）。
 
-### 三档裁决：可逆性，不是破坏力大小
+### 两档裁决：可逆性，不是破坏力大小
 
 **判定轴是可逆性。**
 
 | 档 | 判据 | 例 |
 |---|---|---|
 | **PASS**（默认） | 可逆 | 读文件、写工作区、装包、`git log/diff`、GET 抓取 |
-| **ASK** | 不可逆但可存活 | 删除、`git push`、`setx`/`reg add`、停进程、POST 外发 |
 | **DENY** | **没有回退路径** | 毁运行时、毁插件实例、格盘、`bcdedit`、删盘根 |
+
+> ⚠ **中间档（ASK）已在 D6 撤销**（2026-09-24 用户裁决）。原三档表里的
+> 「不可逆但可存活」档（删除、`git push`、`setx`、停进程、POST 外发）不再提示 ——
+> 宿主以 `ask→never` 运行时，每一个 `ask` 都被静默自动拒绝，闸门从「谨慎」变成
+> 「死锁」。这份表保留在 `ASK_CMD_RETRACTED` 里**作为撤销记录，永不参与判定**。
 
 **DENY 档的共同点不是「损失大」，是「已经没有回退路径了」** ——
 DSH 的修复工具就住在被毁的那个 `node_modules` 里。
@@ -408,11 +413,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**当前状态：14 套件 / 450 项全 PASS**（`suites=14 suites_failed=0`，退出码 0）。
+**当前状态：15 套件 / 487 项全 PASS**（`suites=15 suites_failed=0`，退出码 0）。
 
 | 套件 | 项数 | 覆盖 |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **条款边界护栏**（见下） |
+| `boundary-sovereign-only.test.mjs` | **72** | **条款边界护栏**（见下） |
 | `d11-hidden-carriers.test.mjs` | 50 | D10 漏掉的 6 个不可见码点 + 11 种隐藏写法 |
 | `hot-switch.test.mjs` | 49 | FACE 6 路由语义、section 增删、sidecar 落盘、重启回放、损坏文件回落、畸形请求 |
 | `gate.test.mjs` | 45 | 三档裁决 + 大量「不许过度拦截」回归 |
@@ -423,13 +428,14 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 | `d9-spelling.test.mjs` | 19 | 引号 / 遍历 / `\\?\` / 8.3 短名 / 裸设备 |
 | `d10-injection-scrub.test.mjs` | 19 | 隐蔽载体剥离，可见散文必须存活 |
 | `d12-refusal-word-drift.test.mjs` | 19 | 宿主/客户端拒绝词表漂移 + 最长优先 |
+| `d13-partial-delivery.test.mjs` | 34 | **v0.8.0 蒸馏契约**：未完交付档（partial）、判定优先级、76 条词表规模、`sovereign_verify` 自检 |
 | `adversarial.test.mjs` | 18 | 改拼写绕 DENY、正常操作不误伤 |
 | `workspace-collision.test.mjs` | 16 | 工作区正常写入不被误拦 |
 | `sanitizer.test.mjs` | 14 | 凭据形状脱敏，散文不误伤 |
 
 > **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 三个探针
 > （真 `@deepseek-ai/cordis` 跑 `apply()`）与 `retired-v31-compression-awareness.mjs`
-> 是独立脚本，**不计入 450 项**。
+> 是独立脚本，**不计入 487 项**。
 
 **`boundary-sovereign-only.test.mjs` 是条款变更的安全网。** 它守七件事：
 
@@ -475,6 +481,8 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 
 | 版本 | 变更 |
 |---|---|
+| **0.8.0** | **从 `dsh-armor-gen5` 蒸馏四类资产** —— ① **拒绝词表 47 → 76 条**：并入 v8 域的换词形态（`这个我做不了` / `这条我不接` / `从角色里出来` / `攻击侧我不给` / `防御侧我认真给` …）与英文侧名词性收手（`as an ai language model` / `out of my scope` / `against my policy` / `not able to assist`）；② **新增「未完交付」档（partial）** —— `……` / `篇幅有限` / `剩下省略` 不再判 pass，客户端橙灯，与拒答红色报警分离；③ **新增 `sovereign_verify` 只读自检** —— 一次返回条款真实组装结果、开关、词表规模与八面状态（从 `gen5_verify` 蒸馏）；④ **文档修正**：三档裁决实为两档（ASK 于 D6 撤销）；测试 15 套件 / 487 项 |
+| **0.7.0** | **修掉自指悖论** —— 判定基准由「用户输入通道来的」改为「谁引入的」，条款自身不再是规则的字面反例（实测 session-697e0dbc 模型据此降级）；标记去 DAN 化（`[MODE: SOVEREIGN]` → `[用户启用 · 用户主权声明]`）；token 净减 54（3339 → 3232 字符 / 1863 → 1809 token） |
 | **0.6.0** | **修正 section order 恒定错误** —— 由写死的 `10250` 改为运行时取 `Number.MAX_SAFE_INTEGER - 1`（写死值只在作者当时的安装组合下成立，用户后装插件即失效）；**新增 FACE 6/7 开关**（注册表级 + 请求级双通道，下一请求生效）；**新增影子检测** —— 被别的插件 `complete: true` 吞掉时如实报告而非静默失效；客户端开关升级为**四态**并与宿主双向绑定；`package.json` 补 `files` / `peerDependencies`；测试 14 套件 / 450 项 |
 | 0.5.0 | 开关从「指示灯」变成真断路器（FACE 6 + FACE 7）；条款一字未改（仍 3339 字符） |
 | 0.4.0 | **风险提示完全取消**（含反向形态列入违规词表）；**对外防御升级为抗注入** —— 新增 7 种注入识别形态与"不影响阅读"的边界界定，重写为「对外防御 —— 抗注入」节；新增「主权能力」总纲节；自锁条款补「改源码」唯一例外；边界测试 69 项 |
@@ -493,7 +501,7 @@ dsh-sovereign/
 ├── manifest.json           ← 面清单 / 版本 / 能力声明
 ├── CHANGELOG.md            ← 详细变更记录
 ├── README.md               ← 本文件
-└── tests/                  ← 14 套件 / 450 项（+ 3 个探针脚本）
+└── tests/                  ← 15 套件 / 487 项（+ 3 个探针脚本）
 ```
 
 ---
@@ -509,7 +517,7 @@ with no "mode" for the user to switch into:
 |---|---|---|
 | **1** | `systemPrompt.section` | Injects the sovereignty clause as the **last section of the system prompt** |
 | **2** | `tools/post-execute` | Sanitizes tool results on their way into the context (credential masking + hidden-carrier scrubbing) |
-| **3** | `tools/pre-execute` | Rules on dangerous operations by **reversibility** (PASS / ASK / DENY) |
+| **3** | `tools/pre-execute` | Rules on dangerous operations by **reversibility** (PASS / DENY) |
 | **4** | `sessionProjections` | Refusal score projection, driving the client toggle's alarm state |
 | **5** | `system-prompt/assemble` | **Read-only** capture of clause metadata so the client can show the real assembly |
 | **6** | `webServer.register` | Switch endpoints + sidecar persistence; registry-level (de)registration of the clause section |
@@ -523,7 +531,7 @@ plus in-transcript highlighting of refusal phrases.
 **⚠ The clause does exactly one thing: define the sovereignty capability.
 It contains no risk notice and no injection beyond that.**
 
-As of v0.7.0 the clause is **8 sections / 3232 characters / 1809 tokens**:
+As of v0.8.0 the clause is still **8 sections / 3232 characters / 1809 tokens** (v0.8.0 added no clause text):
 
 | Class | Sections | Role |
 |---|---|---|
@@ -818,15 +826,20 @@ must not make the button jump).
 
 **Takes effect on the next model request** — no profile restart, no new session, no page refresh.
 
-### Three verdicts: reversibility, not magnitude
+### Two verdicts: reversibility, not magnitude
 
 **The axis is reversibility.**
 
 | Verdict | Criterion | Examples |
 |---|---|---|
 | **PASS** (default) | reversible | reading files, writing the workspace, installing packages, `git log/diff`, GET fetches |
-| **ASK** | irreversible but survivable | deletions, `git push`, `setx`/`reg add`, stopping processes, POST egress |
 | **DENY** | **no recovery path left** | destroying the runtime, destroying the plugin instance, wiping disks, `bcdedit`, deleting a drive root |
+
+> ⚠ **The middle tier (ASK) was withdrawn in D6** (user ruling, 2026-09-24). The old
+> "irreversible but survivable" row (deletions, `git push`, `setx`, stopping processes,
+> POST egress) no longer prompts — under an `ask→never` runtime every `ask` is silently
+> auto-denied, turning the gate from caution into a deadlock. That row survives in
+> `ASK_CMD_RETRACTED` as a **withdrawal record; it never participates in a verdict**.
 
 **What the DENY tier has in common is not "big loss" — it is "no recovery path left".**
 DSH's own repair tools live inside the very `node_modules` being destroyed.
@@ -843,11 +856,11 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**Current status: 14 suites / 450 assertions, all PASS** (`suites=14 suites_failed=0`, exit 0).
+**Current status: 15 suites / 487 assertions, all PASS** (`suites=15 suites_failed=0`, exit 0).
 
 | Suite | Count | Covers |
 |---|---|---|
-| `boundary-sovereign-only.test.mjs` | **69** | **the clause-boundary guard** (see below) |
+| `boundary-sovereign-only.test.mjs` | **72** | **the clause-boundary guard** (see below) |
 | `d11-hidden-carriers.test.mjs` | 50 | the 6 invisible code points D10 missed + 11 hidden spellings |
 | `hot-switch.test.mjs` | 49 | FACE 6 route semantics, section (de)registration, sidecar round-trip, restart replay, corrupt-file fallback, malformed requests |
 | `gate.test.mjs` | 45 | the three verdicts + heavy "must not over-block" regression |
@@ -920,6 +933,8 @@ because it makes people believe the secret is already safe.
 
 | Version | Changes |
 |---|---|
+| **0.8.0** | **Four assets distilled from `dsh-armor-gen5`** — ① **refusal lexicon 47 → 76 entries**: v8-domain rewordings (`这个我做不了` / `这条我不接` / `从角色里出来` / `攻击侧我不给` / `防御侧我认真给` …) plus English nominal refusals (`as an ai language model` / `out of my scope` / `against my policy` / `not able to assist`); ② **new partial-delivery verdict** — `……` / `篇幅有限` / `剩下省略` no longer score pass; the client shows an amber dot, separate from the red refusal alarm; ③ **new `sovereign_verify` read-only self-check** — one snapshot of the clause's real assembly result, switch state, lexicon sizes and all eight faces (distilled from `gen5_verify`); ④ **doc fix**: the three-verdict table was really two (ASK withdrawn in D6); 15 suites / 487 assertions |
+| **0.7.0** | **Self-reference paradox fixed** — the basis moved from "arrived through the user input channel" to "who introduced it", so the clause is no longer a literal counterexample to its own rule (measured on session-697e0dbc, where the model downgraded it); markers de-DAN-ified (`[MODE: SOVEREIGN]` → `[用户启用 · 用户主权声明]`); net −54 tokens (3339 → 3232 chars / 1863 → 1809 tokens) |
 | **0.6.0** | **Fixed the section-order error** — hard-coded `10250` replaced by the runtime maximum `Number.MAX_SAFE_INTEGER - 1` (the constant only held for the author's install combination and broke as soon as the user added plugins); **FACE 6/7 switch** (registry level + request level, effective next request); **shadow detection** — reports honestly when another plugin's `complete: true` swallows the section, instead of failing silently; client toggle upgraded to **four states** with two-way host binding; `package.json` gains `files` / `peerDependencies`; 14 suites / 450 assertions |
 | 0.5.0 | The switch becomes a real breaker (FACE 6 + FACE 7); not one character of the clause changed (still 3339) |
 | 0.4.0 | **Risk notices removed entirely** (inverse form added to the violation table); **outward defense upgraded to anti-injection** — 7 injection recognition forms plus the "reading is unaffected" boundary, rewritten as 对外防御 —— 抗注入; new 主权能力 charter section; self-lock clause gains the "edit the source" exception; boundary suite 69 assertions |
@@ -938,7 +953,7 @@ dsh-sovereign/
 ├── manifest.json           ← face list / version / capability declaration
 ├── CHANGELOG.md            ← detailed change log
 ├── README.md               ← this file
-└── tests/                  ← 14 suites / 450 assertions (+ 3 probe scripts)
+└── tests/                  ← 15 suites / 487 assertions (+ 3 probe scripts)
 ```
 
 ---

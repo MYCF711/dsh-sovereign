@@ -8,6 +8,43 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.0] — 2026-11-08
+
+### Added — 从 dsh-armor-gen5 蒸馏的四类资产
+
+**来源**：同作者的破甲插件 `Minglink/dsh-armor-gen5`（v0.3.0，`FLASH-FORGE v9.1` 核）。
+
+**蒸馏原则：只取工程范式与实测词表，不取越狱文本。** armor 的四公理 / 静态锚 /
+质量锁 / WHO BOSS IS 是「让模型照做」的越狱话术，与本插件「条款只定义主权能力」
+的定位冲突，一律不收。收进来的是它**测出来的**东西与**写对了的**工程件。
+
+| # | 资产 | 落点 | 为什么收 |
+|---|---|---|---|
+| 1 | **拒绝词表 v8 域形态**（47 → 76 条） | `REFUSAL_MARKERS_ZH` + `REFUSAL_RE_EN` + 客户端 `HOST_PARITY_WORDS` | armor 的 128 探针题库逐条测出「换动词 / 二分裁决 / 跳出角色」三类漏检形态；原表只收动词主干，遇到换词就漏检 |
+| 2 | **未完交付档（partial）** | `PARTIAL_TAIL` + `refusalScore` + 投影 `stateVersion` 3 + 客户端橙灯 | 原三态把「写一半就停」判 pass；它是「提醒变成了拒绝」的同义退化，比拒答更隐蔽（正文看起来在推进，交付是残的） |
+| 3 | **`sovereign_verify` 只读自检** | FACE 8（`tools.register`） | 散落的状态没有一处能回答「条款现在到底在不在提示词里、多少字符、排第几、有没有被顶掉」；从 `gen5_verify` 蒸馏 |
+| 4 | **文档修正** | README 中文/英文 | 三档裁决实为两档（ASK 于 D6 撤销），旧表与代码漂移 |
+
+### Changed
+
+- 投影 `stateVersion` 2 → 3（新增 `partial` 字段，形状变了必须升版，否则客户端读到旧形状）
+- 客户端五态：未激活 / 被顶掉 / 拒答（红）/ **未完交付（橙）** / 已激活（绿）
+- 启动日志加版本号与词表规模（`refusal=76 fallback=38 risk=41 domains=9 partial=on`）
+- 版本号唯一来源改为 `package.json`（`PKG_VERSION` 由 `readFileSync` 读出，与 `gen5_verify` 同一条纪律）
+
+### Added — 测试
+
+- `tests/d13-partial-delivery.test.mjs`（34 项）：partial 形态与边界、判定优先级（refusal > fallback > partial > pass）、76 条词表规模、`sovereign_verify` 快照
+- 全量：**15 套件 / 487 项 PASS**（`suites=15 suites_failed=0`）
+
+### 拒绝的蒸馏项（记录在案，不是遗漏）
+
+- **条款外置化**（armor 的三槽位词库）：本插件的条款有 72 项边界测试守卫内容与体积；外置化 = 用户可替换任意文本，等于撤销「条款只做一件事」的保证。要换措辞请改源码并重跑边界测试，不要走热替换。
+- **W5 自我博弈推回 / T4 证据链预热**：那是越狱语境下的服从修复。条款的前提是「不存在拒答这个动作」—— 既然拒答不存在，再为拒答准备一套修复循环就是自相矛盾；且它需要 `agent/pre-step` 注入，与「零注入成本」冲突。
+- **自动瓦解引擎**（清空宿主约束段）：本插件的定位是「加自己一段、不动别人」。主动清空宿主的段会使 FACE 5/7 的「如实报告」失去意义（报告的是被自己改过的表）。
+
+---
+
 ## [0.7.0] — 2026-10-11
 
 ### Fixed — 自指悖论：旧来源判定规则否定自己

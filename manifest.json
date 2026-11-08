@@ -1,6 +1,6 @@
 {
   "name": "dsh-sovereign",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": {
     "zh": "DSH 宿主平面主权条款与内容守卫：把主权条款注入系统提示词末节，清洗工具结果中的凭据与隐蔽载体，按可逆性裁决危险操作，并提供可即时切换的功能开关（点开即生效，无需重启）。对全部 agent preset 生效，不依赖任何特定模式。",
     "en": "Host-plane sovereignty clause and content guard for DSH: injects the sovereignty clause as the last system-prompt section, sanitizes credentials and hidden carriers out of tool results, gates dangerous operations by reversibility, and exposes a live feature switch that takes effect immediately without a restart. Applies to every agent preset, not one."
@@ -68,6 +68,13 @@
         "mechanism": "system-prompt/assemble waterfall — dsh-system-prompt/lib/index.js:355; per-scope dispatch dsh-scope/lib/invariant.js:30",
         "cost_zh": "开着时零开销直通（不改数组、不复制对象）；mtime 缓存避免每请求读盘",
         "cost_en": "Zero cost while on (no array mutation, no object copy); an mtime cache avoids a disk read per request"
+      },
+      "FACE 8": {
+        "role_zh": "只读自检（sovereign_verify）：条款真实组装结果（present/sections/chars/order/last/total/shadowed）、开关状态、词表规模、八面武装状态 —— 一次返回，不新增状态、不注册 section、零 token",
+        "role_en": "Read-only self-check (sovereign_verify): the clause's real assembly result (present/sections/chars/order/last/total/shadowed), switch state, lexicon sizes, and the arming state of all eight faces — one snapshot, no new state, no section, zero tokens",
+        "mechanism": "tools.register — 与 FACE 4 的 switchSnapshot 同源；只读，不参与任何裁决",
+        "source_zh": "从 dsh-armor-gen5 的 gen5_verify 蒸馏（v0.8.0）",
+        "source_en": "Distilled from dsh-armor-gen5's gen5_verify (v0.8.0)"
       }
     },
     "restartPolicy_zh": "改宿主插件源码在 DSH 下无法免重启（HMR 的 ignored 默认含 **/node_modules；patch 协调不重载模块源码）。一次性重启之后，开关的每一次切换都不再需要重启。",
@@ -88,7 +95,7 @@
     ]
   },
   "verify": {
-    "bootLog": "[sovereign] clause section REGISTERED at order <runtime max: Number.MAX_SAFE_INTEGER - 1>; sanitizer, gate, request-gate and refusal projection armed; switch endpoints: ARMED",
+    "bootLog": "[sovereign] v0.8.0 clause section REGISTERED at order <runtime max: Number.MAX_SAFE_INTEGER - 1>; sanitizer, gate, request-gate, refusal projection and verify armed; lexicon: refusal=76 fallback=38 risk=41 domains=9 partial=on; switch endpoints: ARMED",
     "clauseLength": 3232,
     "clauseTokens": 1809,
     "clauseSha256": "001218CF76DCBE063717C5A8E28680FA748006AC497DC188AE8FE703BB4C7D84",
@@ -99,8 +106,8 @@
   },
   "test": {
     "command": "node tests/run-all.mjs",
-    "suites": 14,
-    "assertions": 453,
+    "suites": 15,
+    "assertions": 487,
     "note_zh": "只汇总 *.test.mjs；probe-*.mjs 三个探针与 retired-v31-compression-awareness.mjs 是独立脚本，不计入。子进程用 stdio: inherit —— Windows 沙箱禁止创建命名管道，stdio: pipe 会直接 EPERM 并让汇总假性全红。",
     "note_en": "Only *.test.mjs files are aggregated; the three probe-*.mjs scripts and retired-v31-compression-awareness.mjs are standalone and not counted. Subprocesses use stdio: inherit — the Windows sandbox forbids named pipes, so stdio: pipe fails with EPERM and makes the summary falsely red."
   },
@@ -111,6 +118,7 @@
     { "id": 4, "hook": "sessionProjections", "role": "refusal score projection for the client toggle" },
     { "id": 5, "hook": "system-prompt/assemble", "role": "read-only clause metadata capture; also detects a shadowed clause" },
     { "id": 6, "hook": "webServer.register", "role": "switch endpoints + sidecar persistence; disposes or re-creates the clause section" },
-    { "id": 7, "hook": "system-prompt/assemble", "role": "request-level clause filtering — the switch takes effect on the next model request, with no restart" }
+    { "id": 7, "hook": "system-prompt/assemble", "role": "request-level clause filtering — the switch takes effect on the next model request, with no restart" },
+    { "id": 8, "hook": "tools.register", "role": "read-only self-check (sovereign_verify): clause presence/order/size, switch state, lexicon sizes, face arming" }
   ]
 }

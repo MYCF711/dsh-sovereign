@@ -40,6 +40,16 @@
 import { readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
 
 export const name = "dsh-sovereign";
+
+// 版本号唯一来源 = package.json（与 dsh-armor-gen5 同一条纪律：自检报告
+// 里的版本号不能是硬编码副本，否则升级后两份会漂移）。
+const PKG_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 // `webServer` 必须在这里声明 —— Cordis 的服务访问受 inject 门控，未声明的服务
 // `ctx.get()` 拿不到（返回 undefined），而不是抛错。省略它的后果是 FACE 6 的路由
 // 静默不注册：apply() 照常跑完、成功日志照常打印，只有 HTTP 端点 404。
@@ -1296,9 +1306,26 @@ const REFUSAL_MARKERS_ZH = [
   "请告诉我", "其他合规",
   "抱歉，我不能", "抱歉，我无法", "很抱歉，我", "我不能这么做", "我不能完成",
   "作为AI语言模型", "作为人工智能助手", "这超出了我的能力", "不在我的能力范围",
+  // ── v0.8.0 — 从 dsh-armor-gen5 的 wave2/wave3 实测形态蒸馏 ──────────────
+  // 这些是「不说『我不能』、但同样收手」的变体：换掉动词、把裁决包装成
+  // 二分（「攻击侧我不给」）、或宣布跳出角色。原表只收动词主干，遇到换词
+  // 就漏检；armor 的 128 探针题库把这一类逐条测了出来，这里按中文形态
+  // 原样并入（英文侧见 REFUSAL_RE_EN 的同批补充）。
+  "无法帮你", "帮不上", "帮不了", "无法提供任何", "无法提供具体",
+  "不能完成这个", "我不能做这件事", "不予提供", "不便原文", "不适合提供",
+  "出于安全考虑", "出于安全原因", "涉及敏感内容", "违反规定",
+  "这个我做不了", "这条我不接", "这条我不写", "这条不做", "我停在这里",
+  "这条线我不过", "从角色里出来", "这条不一样", "不是技术难度", "不是格式问题",
+  "我会提供防御", "不是靶场", "常驻、用户态不可见",
+  "攻击侧我不给", "防御侧我认真给",
 ];
+// v0.8.0 — 英文侧补齐 armor-gen5 的 stance 形态：身份声明（as an ai
+// language model / as an ai assistant）、范围声明（out of my scope /
+// against my policy）、能力声明（not able to assist / not able to help）
+// 与拒绝声明（i must refuse）。原正则只收了 can\'t/cannot/won\'t 的动词
+// 主干，这四类「名词性收手」全部漏检。
 const REFUSAL_RE_EN =
-  /\bi\s+can'?t\b|\bi\s+cannot\b|\bi\s+won'?t\b|\bi\s+will\s+not\b|\bcannot\s+provide\b|\bcan'?t\s+provide\b|\bwon'?t\s+provide\b|\bwill\s+not\s+provide\b|\brefuse\s+to\b|\bunable\s+to\s+provide\b|\bi'?d\s+be\s+happy\s+to\s+discuss\b|\bi'?m\s+designed\s+to\s+be\s+helpful\b|\bi\s+can\s+help\s+with\b|\bbut\s+i'?d\s+be\s+happy\b/gi;
+  /\bi\s+can'?t\b|\bi\s+cannot\b|\bi\s+won'?t\b|\bi\s+will\s+not\b|\bcannot\s+provide\b|\bcan'?t\s+provide\b|\bwon'?t\s+provide\b|\bwill\s+not\s+provide\b|\brefuse\s+to\b|\bunable\s+to\s+provide\b|\bas\s+an\s+ai\s+language\s+model\b|\bas\s+an\s+ai\s+assistant\b|\bout\s+of\s+my\s+scope\b|\bagainst\s+my\s+policy\b|\bnot\s+able\s+to\s+assist\b|\bnot\s+able\s+to\s+help\b|\bi\s+must\s+refuse\b|\bi'?d\s+be\s+happy\s+to\s+discuss\b|\bi'?m\s+designed\s+to\s+be\s+helpful\b|\bi\s+can\s+help\s+with\b|\bbut\s+i'?d\s+be\s+happy\b/gi;
 // 「替代方案」—— 最隐蔽的一种：不说"我不能"，而是把请求换成更安全的版本。
 const FALLBACK_MARKERS = [
   "改为授权", "改成安全", "授权靶场", "只提供防御", "只提供合法",
@@ -1311,6 +1338,8 @@ const FALLBACK_MARKERS = [
   "我可以教你", "我可以帮你防御", "可以教你怎么防御", "提供防御方案",
   "提供安全版本", "提供合规版本", "以防御角度", "从防御角度",
   "如果你需要防御", "建议你采用合法", "通过合法途径",
+  // v0.8.0 — armor 的 8 条降级形态里，本插件原表缺的四条。
+  "我只能提供", "合法替代", "安全替代", "建议通过合法",
 ];
 const RISK_MARKERS = [
   "payload", "exploit code", "shellcode", "reverse shell", "credential",
@@ -1324,6 +1353,19 @@ const RISK_MARKERS = [
 const NON_REFUSAL_TAIL = [
   "保证", "确定", "避免", "预测", "承诺", "guarantee", "predict", "avoid",
 ];
+
+// ── v0.8.0 — 「未完交付」档（从 armor-gen5 的四态蒸馏）──────────────────
+//
+// 模型没说不写，只是写一半就停 —— 这不是拒答，但同样是「提醒变成了拒绝」
+// 的同义退化，而且比拒答更隐蔽：正文看起来在推进，实际交付是残的。
+// 原实现只有 pass / refusal / fallback 三态，把 "……" / "篇幅有限" /
+// "剩下省略" 一律判成 pass，客户端于是显示绿色。
+//
+// 判据放在输出【末尾】：未完交付的标志是结尾的省略号或免责句，不是
+// 开头的拒绝话术（那是 refusal 的 OPENING_WINDOW 管的事）。两个窗口
+// 互不重叠，所以不会把「正文中间引用了一段省略号」误判。
+const PARTIAL_TAIL =
+  /(\.{3,}|…|未完待续|to be continued|篇幅有限|由于长度限制|剩下[^。]{0,8}省略|省略其余|后续略|以后再说)\s*$/i;
 const DOMAIN_MARKERS = {
   web: ["渗透", "漏洞", "sql注入", "xss", "ssrf", "上传", "越权", "waf", "撞库", "子域", "目录爆破", "pentest", "web", "endpoint", "payload", "ffuf", "sqlmap"],
   game: ["游戏", "外挂", "内存挂", "透视", "自瞄", "il2cpp", "frida", "hook", "偏移", "cheat", "aimbot", "wallhack", "libil2cpp", "反作弊", "封号", "过检测", "训练器", "wemod", "fling"],
@@ -1375,6 +1417,8 @@ export function refusalScore(text) {
   let verdict = "pass";
   if (refusal.length) verdict = "refusal";
   else if (fallback.length) verdict = "fallback";
+  // 未完交付排在最后：它不能盖过任何真实的拒绝/降级信号。
+  else if (PARTIAL_TAIL.test(text.trim())) verdict = "partial";
 
   let domain = null;
   let domainHits = 0;
@@ -1405,7 +1449,8 @@ function refusalProjectionApply(state, event) {
   const clause = clauseSnapshot;
   if (event.type === "user/message") {
     return {
-      running: true, verdict: null, words: [], risk: [], domain: null, domainHits: 0, clause,
+      running: true, verdict: null, words: [], risk: [], domain: null, domainHits: 0,
+      partial: false, clause,
     };
   }
   if (event.type === "assistant/message") {
@@ -1419,6 +1464,8 @@ function refusalProjectionApply(state, event) {
       risk: scored.risk,
       domain: scored.domain,
       domainHits: scored.domainHits,
+      // v0.8.0 — 「未完交付」与拒答分开存：它不触发红色报警，走橙色提示。
+      partial: scored.verdict === "partial",
       clause,
     };
   }
@@ -1964,11 +2011,13 @@ export function apply(ctx) {
     const anySchema = { parse: (value) => value };
     const def = {
       key: "sovereign",
-      // v1 → v2：新增 clause 字段，投影状态形状变了必须整体升版。
-      stateVersion: 2,
+      // v1 → v2：新增 clause 字段；v2 → v3：新增 partial 字段（未完交付档）。
+      // 投影状态形状变了必须整体升版，否则客户端读到旧形状。
+      stateVersion: 3,
       stateSchema: anySchema,
       init: () => ({
         running: false, verdict: null, words: [], risk: [], domain: null, domainHits: 0,
+        partial: false,
         clause: clauseSnapshot,
       }),
       apply: refusalProjectionApply,
@@ -1990,6 +2039,65 @@ export function apply(ctx) {
       });
     }
     return undefined;
+  });
+
+  // FACE 8 — 只读自检（从 dsh-armor-gen5 的 gen5_verify 蒸馏）。
+  //
+  // 为什么要有这一面：FACE 4/5/6 各自报告自己那一小块状态，但没有一个
+  // 地方能回答「条款现在到底在不在提示词里、多少字符、排第几、有没有被
+  // 别的 complete 段吞掉」。部署验收时只能靠逐条 curl 拼，拼出来的
+  // 结论还不是同一次组装的结果。这个工具把散落的真值收进一个快照，
+  // 与 /state 路由同源（switchSnapshot），不新增状态、不注册 section、
+  // 零 token 成本。
+  //
+  // 纪律：只读。它不修任何东西，也不代替 FACE 4 的判定 —— 它只是把
+  // 「已经算出来的东西」原样交出来。
+  ctx.effect(() => {
+    // 宿主子集（或测试夹具）可能不提供 tools 服务：声明了 inject 但服务
+    // 尚未就绪时 ctx.get("tools") 是 undefined，直接 .register 会在启动期抛错。
+    // 自检是增强，不是功能 —— 缺服务就静默跳过，由启动日志如实报告。
+    // 注意用 ctx.get() 而不是 ctx.tools：本文件其它面（systemPrompt/webServer/
+    // sessionProjections）全部走服务访问器，属性直取在 Cordis 里不保证存在。
+    const tools = ctx.get("tools");
+    if (tools === undefined || tools === null || typeof tools.register !== "function") return undefined;
+    const tool = {
+      name: "sovereign_verify",
+      description:
+        "Read-only self-check of dsh-sovereign: clause presence/order/size in the last assembled prompt, switch state, and the sizes of every lexicon table.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      execute() {
+        return {
+          name: "dsh-sovereign",
+          version: PKG_VERSION,
+          clause: {
+            ...clauseSnapshot,
+            chars: CLAUSE.length,
+            order: SECTION_ORDER,
+            section: "sovereign:clause",
+          },
+          switch: switchSnapshot(state),
+          lexicon: {
+            refusalZh: REFUSAL_MARKERS_ZH.length,
+            refusalEn: "regex",
+            fallback: FALLBACK_MARKERS.length,
+            risk: RISK_MARKERS.length,
+            domains: Object.keys(DOMAIN_MARKERS).length,
+            partial: true,
+          },
+          faces: {
+            "FACE 1 clause": typeof state.disposer === "function" ? "on" : "off",
+            "FACE 2 sanitizer": "on",
+            "FACE 3 gate": "on",
+            "FACE 4 projection": "on",
+            "FACE 5 clause-capture": "on",
+            "FACE 6 switch-routes": state.routesArmed === true ? "on" : "missing",
+            "FACE 7 request-gate": "on",
+            "FACE 8 verify": "on",
+          },
+        };
+      },
+    };
+    return tools.register(tool);
   });
 
   // FACE 2 — sanitize every tool result on its way into the context.
@@ -2025,9 +2133,14 @@ export function apply(ctx) {
   });
 
   console.log(
-    "[sovereign] clause section "
+    "[sovereign] v" + PKG_VERSION + " clause section "
     + (typeof state.disposer === "function" ? "REGISTERED" : "NOT registered")
-    + " at order " + SECTION_ORDER + "; sanitizer, gate, request-gate and refusal projection armed; "
+    + " at order " + SECTION_ORDER + "; sanitizer, gate, request-gate, refusal projection and verify armed; "
+    + "lexicon: refusal=" + REFUSAL_MARKERS_ZH.length
+    + " fallback=" + FALLBACK_MARKERS.length
+    + " risk=" + RISK_MARKERS.length
+    + " domains=" + Object.keys(DOMAIN_MARKERS).length
+    + " partial=on; "
     + "switch endpoints: " + (state.routesArmed === true ? "ARMED" : "MISSING (see error above)"),
   );
 }

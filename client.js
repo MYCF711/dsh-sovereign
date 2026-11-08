@@ -75,6 +75,10 @@
           off: { dot: "#94a3b8", title: "主权未激活 —— 点击激活主权条款" },
           on: { dot: "#10b981", title: "主权已激活 —— 点击关闭" },
           alarm: { dot: "#ef4444", title: "检测到拒答 —— 点击复位" },
+          // 第五态（v0.8.0）：模型没说不写，只是写一半就停（"……"/"篇幅
+          // 有限"/"剩下省略"）。它不触发红色报警 —— 那不是拒答 —— 但也不该
+          // 显示绿色：交付是残的，而绿色等于宣称完整。
+          partial: { dot: "#f59e0b", title: "检测到未完交付 —— 点击复位" },
           shadowed: {
             dot: "#94a3b8",
             title: "主权开关已开，但条款未进入系统提示词（被其他插件的 complete 段顶掉）—— 点击查看说明",
@@ -150,6 +154,15 @@
           // 且宿主面词表若改动，D12 的一致性检查能立刻发现缺口。
           "抱歉，我不能", "抱歉，我无法", "很抱歉，我",
           "我不能这么做", "我不能完成", "不能帮",
+          // v0.8.0 — 宿主面从 armor-gen5 蒸馏的 v8 域形态，客户端同步为超集，
+          // 否则「被判拒答却一个词都不标红」的 D12 缺陷会重新出现。
+          "无法帮你", "帮不上", "帮不了", "无法提供任何", "无法提供具体",
+          "不能完成这个", "我不能做这件事", "不予提供", "不便原文", "不适合提供",
+          "出于安全考虑", "出于安全原因", "涉及敏感内容", "违反规定",
+          "这个我做不了", "这条我不接", "这条我不写", "这条不做", "我停在这里",
+          "这条线我不过", "从角色里出来", "这条不一样", "不是技术难度", "不是格式问题",
+          "我会提供防御", "不是靶场", "常驻、用户态不可见",
+          "攻击侧我不给", "防御侧我认真给",
         ];
 
         var REFUSAL_WORDS = [
@@ -526,7 +539,9 @@
           // （比如条款示范、或者讨论拒答本身），无差别标红会造成大量误报。
           react.useEffect(function () {
             var v = armor && armor.verdict ? armor.verdict : null;
-            if (v && v !== "pass") {
+            // partial 的判据是结尾省略号，没有可标红的拒绝词 —— 标红整段
+            // 只会制造噪声，所以它不进高亮分支。
+            if (v && v !== "pass" && v !== "partial") {
               // 等一帧让 assistant 正文先落进 DOM
               var t = window.setTimeout(function () { applyHighlights(); }, 0);
               return function () { window.clearTimeout(t); };
@@ -623,9 +638,16 @@
             state = "shadowed";
           } else {
             var verdict = lastVerdictRef.current;
-            var alarming =
-              verdict !== null && verdict !== "pass" && Date.now() < flashUntilRef.current;
-            state = alarming ? "alarm" : "on";
+            var inWindow = Date.now() < flashUntilRef.current;
+            if (verdict === "partial" && inWindow) {
+              // v0.8.0 — 未完交付是独立一态：橙色，不进入红色报警，
+              // 也不显示绿色（绿色等于宣称交付完整）。
+              state = "partial";
+            } else {
+              var alarming =
+                verdict !== null && verdict !== "pass" && verdict !== "partial" && inWindow;
+              state = alarming ? "alarm" : "on";
+            }
           }
 
           var p = PALETTE[state];
@@ -639,6 +661,7 @@
 
           var title = p.title;
           if (state === "alarm" && words[0]) title = "检测到拒答：" + words[0];
+          else if (state === "partial") title = "检测到未完交付（输出以省略收尾）—— 点击复位";
           else if (state === "on" && domain) title += " · " + domain;
           if (pushFailed) {
             title = "开关未送达宿主（条款仍按宿主侧状态生效）—— 点击重试";
