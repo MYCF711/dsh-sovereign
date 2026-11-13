@@ -8,6 +8,56 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Fixed — `sovereign_verify` 在 DSH 0.2.2-rc.1 上让整个 fiber 进 failed
+
+**症状**：`list_plugins` 里 `"entryId": "include:dsh-sovereign"` 的 `fiberPhase` 是
+`"failed"`，`diagnostic` 报：
+
+```
+tool "sovereign_verify" must declare output { schema, render, presentationMeta? }
+```
+
+**八个面全部不生效**（不只是 FACE 8）——面板全灰、条款没进系统提示词、
+`/plugins/dsh-sovereign/state` 404。表现是「装了但完全没反应」。
+
+**根因**：DSH 0.2.2-rc.1 的 `ToolsService.register()` 新增了强制校验
+（`@deepseek-ai/dsh-tools`，`register(definition)`）：
+
+```js
+const output = definition.output;
+if (output === void 0 || typeof output !== "object" ||
+    typeof output.render !== "function" ||
+    output.presentationMeta !== void 0 && typeof output.presentationMeta !== "function")
+  throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`);
+assertSupportedJsonSchema(output.schema);
+```
+
+`sovereign_verify` 只声明了 `parameters`，没有 `output`。0.8.0 发布时该约束还不存在
+（0.2.2-rc.1 是之后才加的）——属于上游 API 收紧，不是实现错误。
+
+**修复**：补上 `output`：
+
+```js
+output: {
+  schema: { type: "object", properties: {} },
+  render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
+},
+```
+
+- **schema 走 object 根、不钉死字段**：自检结果是随版本演进的只读诊断快照，
+  钉死属性只会让下游升级即断；`assertSupportedJsonSchema` 只要求 object 根。
+- **render 直接序列化**：这是给人和 agent 读的结构化诊断，不需要
+  `propose_action` 那类卡片式富呈现。
+- **`presentationMeta` 不声明**：仅在需要自定义呈现元数据时才加，且必须是函数。
+
+**回归**：`tests/d13-partial-delivery.test.mjs` 新增 4 条断言，钉住
+`output` 存在 / `render` 是函数 / `schema.type === "object"` / render 返回 content blocks。
+以后谁删掉 `output`，测试先红——不用再等宿主启动才发现。
+
+---
+
 ## [0.8.0] — 2026-11-08
 
 ### Added — 从 dsh-armor-gen5 蒸馏的四类资产

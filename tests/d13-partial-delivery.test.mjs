@@ -206,6 +206,23 @@ const verify = registered.find((t) => t && t.name === "sovereign_verify");
 ok("apply() 注册了 sovereign_verify", verify !== undefined);
 ok("工具有只读描述", typeof verify?.description === "string" && /read-only/i.test(verify.description));
 
+// DSH 0.2.2-rc.1 起 `tools.register()` 强制要求 output = { schema, render, presentationMeta? }。
+// 缺了它，注册直接抛 TypeError，**整个 sovereign fiber 进 failed**（八个面全灭，
+// 不只是 FACE 8）—— 而这是纯运行时错误，只跑单元测试发现不了，只有真装进宿主才暴露。
+// 这道断言把它钉在测试里：以后谁删掉 output，这里先红。
+ok("工具有 output 声明", verify?.output !== undefined && typeof verify.output === "object");
+ok("output.render 是函数", typeof verify?.output?.render === "function");
+ok("output.schema 是 object 根", verify?.output?.schema?.type === "object");
+ok("output.render 返回 content blocks", (() => {
+  if (typeof verify?.output?.render !== "function") return false;
+  try {
+    const blocks = verify.output.render({}, { probe: true });
+    return Array.isArray(blocks) && blocks.length > 0 && blocks[0]?.type === "text";
+  } catch {
+    return false;
+  }
+})());
+
 if (verify !== undefined) {
   const snap = verify.execute();
   const pkg = JSON.parse(readFileSync(join(here(), "..", "package.json"), "utf8"));

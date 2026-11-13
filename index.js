@@ -2065,6 +2065,27 @@ export function apply(ctx) {
       description:
         "Read-only self-check of dsh-sovereign: clause presence/order/size in the last assembled prompt, switch state, and the sizes of every lexicon table.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
+      /**
+       * DSH 0.2.2-rc.1 起 `tools.register()` 强制要求每个工具声明
+       * `output = { schema, render, presentationMeta? }`：
+       *
+       *   if (output === void 0 || typeof output !== "object" ||
+       *       typeof output.render !== "function" || ...)
+       *     throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`);
+       *
+       * 缺了它，`sovereign_verify` 注册失败会让**整个 sovereign fiber 进入
+       * failed 状态**（`list_plugins` 里 `fiberPhase: "failed"`），八个面全部
+       * 不生效——不是只有 FACE 8 挂掉。0.8.0 发布时还没有这个约束。
+       *
+       * schema 走 `assertSupportedJsonSchema` 支持子集：object 根 + 无属性约束，
+       * 因为自检结果是只读诊断快照，形状随版本演进，钉死字段只会让下游升级即断。
+       * render 直接序列化：这个工具的输出是给人和 agent 读的结构化诊断，不需要
+       * 富呈现（对比 propose_action 那类卡片式渲染）。
+       */
+      output: {
+        schema: { type: "object", properties: {} },
+        render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
+      },
       execute() {
         return {
           name: "dsh-sovereign",
