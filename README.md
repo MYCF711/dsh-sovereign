@@ -32,7 +32,7 @@
 
 - `bash` / `pwsh` 的 `git commit`：消息经 `-m` / `--message` / `-F` 给出且含 issue `#N` 时，复用快照 core 的外部代码与 `Co-authored-by` 判据；无引用及 merge commit 直接 `next()`。
 - `gh pr merge N` 与 `github` 工具的 `PUT repos/o/r/pulls/N/merge`：执行 core `checkAttribution`。
-- `gh pr create` 与 `github` 工具的 `POST repos/o/r/pulls`：以本地 `git merge-base` 和 `git log --no-merges --format=%H` 取得分支 SHA，再由 core 枚举开放 PR commits；共享外部作者提交时指回原 PR。
+- `gh pr create` 与 `github` 工具的 `POST repos/o/r/pulls`：本地分支以 `git merge-base` 和 `git log --no-merges --format=%H` 取得 SHA；`forkOwner:branch` 通过 `gh api repos/<forkOwner>/<repoName>/commits/<branch>` 取得远端 SHA，不读本地 log。core 再枚举开放 PR commits，共享外部作者提交时指回原 PR。
 - 其他操作不启动 `git` / `gh`、不联网。判据 API 或本地读取失败返回可操作的 DENY；token 只经 `gh` 子进程环境传递，不进 argv 或日志。
 
 判据快照为 `lib/check-pr-attribution.mjs`，来源 `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`。上游正文保持逐字节一致，仅在文件尾追加 commit / branch 集成 helper。
@@ -426,12 +426,12 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**当前源码：16 套件（新增贡献归属 14 项）。** 全量原样输出以交付报告为准。
+**当前源码：16 套件（新增贡献归属 17 项）。** 全量原样输出以交付报告为准。
 
 | 套件 | 项数 | 覆盖 |
 |---|---|---|
 | `boundary-sovereign-only.test.mjs` | **72** | **条款边界护栏**（见下） |
-| `contribution-attribution.test.mjs` | **14** | 全局 commit / merge / create 归因门禁、merge 跳过、API 失败、token 环境、快照 SHA |
+| `contribution-attribution.test.mjs` | **17** | 全局 commit / merge / create 归因门禁、merge 跳过、API 失败、token 环境、快照 SHA |
 | `d11-hidden-carriers.test.mjs` | 50 | D10 漏掉的 6 个不可见码点 + 11 种隐藏写法 |
 | `hot-switch.test.mjs` | 49 | FACE 6 路由语义、section 增删、sidecar 落盘、重启回放、损坏文件回落、畸形请求 |
 | `gate.test.mjs` | 45 | 三档裁决 + 大量「不许过度拦截」回归 |
@@ -516,7 +516,7 @@ dsh-sovereign/
 ├── manifest.json           ← 面清单 / 版本 / 能力声明
 ├── CHANGELOG.md            ← 详细变更记录
 ├── README.md               ← 本文件
-└── tests/                  ← 16 套件（含贡献归属 14 项，+ 3 个探针脚本）
+└── tests/                  ← 16 套件（含贡献归属 17 项，+ 3 个探针脚本）
 ```
 
 ---
@@ -547,7 +547,7 @@ This source adds a contribution-attribution listener to the existing host bundle
 
 - `git commit` in `bash` / `pwsh`: messages supplied through `-m` / `--message` / `-F` and containing an issue `#N` use the snapshot core's external-code and `Co-authored-by` criterion. No-reference messages and merge commits go straight to `next()`.
 - `gh pr merge N` and the `github` tool's `PUT repos/o/r/pulls/N/merge`: run core `checkAttribution`.
-- `gh pr create` and the `github` tool's `POST repos/o/r/pulls`: local `git merge-base` plus `git log --no-merges --format=%H` supplies branch SHAs; the core enumerates open-PR commits and points back to the original PR when an external author's commit is shared.
+- `gh pr create` and the `github` tool's `POST repos/o/r/pulls`: local branches use `git merge-base` plus `git log --no-merges --format=%H`; `forkOwner:branch` instead uses `gh api repos/<forkOwner>/<repoName>/commits/<branch>` for the remote SHA and never reads the local log. The core enumerates open-PR commits and points back to the original PR when an external author's commit is shared.
 - Every other operation calls `next()` without spawning `git` / `gh` or using the network. API/local-criterion failures produce an actionable DENY. Tokens travel only in the `gh` child-process environment, never in argv or logs.
 
 The criterion snapshot is `lib/check-pr-attribution.mjs`, sourced from `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`. Its upstream body remains byte-identical; only commit/branch integration helpers are appended.
@@ -884,12 +884,12 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**Current source: 16 suites, including 14 new contribution-attribution tests.** See the delivery report for verbatim full-suite output.
+**Current source: 16 suites, including 17 new contribution-attribution tests.** See the delivery report for verbatim full-suite output.
 
 | Suite | Count | Covers |
 |---|---|---|
 | `boundary-sovereign-only.test.mjs` | **72** | **the clause-boundary guard** (see below) |
-| `contribution-attribution.test.mjs` | **14** | global commit / merge / create attribution gate, merge skip, API failure, token environment, snapshot SHA |
+| `contribution-attribution.test.mjs` | **17** | global commit / merge / create attribution gate, merge skip, API failure, token environment, snapshot SHA |
 | `d11-hidden-carriers.test.mjs` | 50 | the 6 invisible code points D10 missed + 11 hidden spellings |
 | `hot-switch.test.mjs` | 49 | FACE 6 route semantics, section (de)registration, sidecar round-trip, restart replay, corrupt-file fallback, malformed requests |
 | `gate.test.mjs` | 45 | the three verdicts + heavy "must not over-block" regression |
@@ -983,7 +983,7 @@ dsh-sovereign/
 ├── manifest.json           ← face list / version / capability declaration
 ├── CHANGELOG.md            ← detailed change log
 ├── README.md               ← this file
-└── tests/                  ← 16 suites (including 14 attribution tests, + 3 probes)
+└── tests/                  ← 16 suites (including 17 attribution tests, + 3 probes)
 ```
 
 ---

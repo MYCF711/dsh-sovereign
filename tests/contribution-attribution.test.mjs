@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { resolve as resolvePath } from "node:path";
 
 import * as core from "../lib/check-pr-attribution.mjs";
 import {
@@ -212,10 +213,11 @@ test("git commit -F 有 noreply Co-authored-by PASS", async () => {
     },
   });
   const next = nextSpy();
-  const result = await guard(execShape("bash", { command: "git commit -F message.txt" }), next);
+  const workdir = resolvePath("D:/attribution-worktree");
+  const result = await guard(execShape("bash", { command: "git commit -F relative.txt", workdir }), next);
   assert.equal(result, "next-result");
   assert.equal(next.calls, 1);
-  assert.deepEqual(reads, [{ path: "message.txt", encoding: "utf8" }]);
+  assert.deepEqual(reads, [{ path: resolvePath(workdir, "relative.txt"), encoding: "utf8" }]);
   assert.equal(api.calls.length, 2);
 });
 
@@ -234,6 +236,36 @@ test("真实 core：gh pr merge #49 共享 #41 外部提交 DENY", async () => {
   assert.match(decision.reason, /应回 PR #41/);
   assert.equal(api.calls.length, 4);
   assert.equal(next.calls, 0);
+});
+
+test("gh pr merge 的 --merge/-R 前置编号两种顺序都 DENY", async () => {
+  const calls = [];
+  const fakeCore = {
+    ...core,
+    async checkAttribution(options) {
+      calls.push(options);
+      return {
+        status: "FAIL",
+        failures: [{
+          type: "shared-commit", short: "shared-", author: "external-author",
+          originalPr: 41, originalAuthor: "external-author",
+        }],
+      };
+    },
+  };
+  const guard = createContributionGuard({ core: fakeCore, api: fakeApi({}) });
+  for (const command of [
+    `gh pr merge --merge 49 --repo ${REPO}`,
+    `gh pr merge -R ${REPO} 49`,
+  ]) {
+    const next = nextSpy();
+    const decision = await guard(execShape("bash", { command }), next);
+    assert.equal(decision.kind, "deny");
+    assert.match(decision.reason, /应回 PR #41/);
+    assert.equal(next.calls, 0);
+  }
+  assert.deepEqual(calls.map((call) => call.pr), [49, 49]);
+  assert.deepEqual(calls.map((call) => call.repo), [REPO, REPO]);
 });
 
 test("github PUT pulls/N/merge 走 checkAttribution，repo/pr 解析正确", async () => {
@@ -318,6 +350,55 @@ test("github POST pulls 创建 PR 复用本地 SHA 与 checkBranchAttribution", 
   assert.equal(calls[0].repo, REPO);
   assert.deepEqual(calls[0].shas, ["shared-sha"]);
   assert.equal(next.calls, 0);
+});
+
+test("forkOwner:branch 使用 gh api 远端 head SHA，不读本地 merge-base/log", async () => {
+  const calls = [];
+  const fakeCore = {
+    ...core,
+    async checkBranchAttribution(options) {
+      calls.push(options);
+      return { status: "PASS", failures: [] };
+    },
+  };
+  const api = fakeApi({
+    "/repos/forkOwner/dsh-session-superagent/commits/feature%2Faudit": { sha: "remote-head-sha" },
+  });
+  const execFileImpl = fakeExec();
+  const guard = createContributionGuard({ core: fakeCore, execFileImpl, api });
+  const next = nextSpy();
+  const result = await guard(execShape("bash", {
+    command: `gh pr create --repo ${REPO} --base main --head forkOwner:feature/audit`,
+  }), next);
+  assert.equal(result, "next-result");
+  assert.equal(next.calls, 1);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].shas, ["remote-head-sha"]);
+  assert.deepEqual(api.calls, ["/repos/forkOwner/dsh-session-superagent/commits/feature%2Faudit"]);
+  assert.equal(execFileImpl.calls.length, 0);
+});
+
+test("forkOwner:branch 远端 API 失败 DENY，且不回落本地 log", async () => {
+  let coreCalls = 0;
+  const fakeCore = {
+    ...core,
+    async checkBranchAttribution() { coreCalls += 1; throw new Error("must not run"); },
+  };
+  const api = fakeApi({
+    "/repos/forkOwner/dsh-session-superagent/commits/feature": new Error("HTTP 404 fork branch"),
+  });
+  const execFileImpl = fakeExec();
+  const guard = createContributionGuard({ core: fakeCore, execFileImpl, api });
+  const next = nextSpy();
+  const decision = await guard(execShape("bash", {
+    command: `gh pr create --repo ${REPO} --base main --head forkOwner:feature`,
+  }), next);
+  assert.equal(decision.kind, "deny");
+  assert.match(decision.reason, /HTTP 404 fork branch/);
+  assert.match(decision.reason, /gh auth status/);
+  assert.equal(next.calls, 0);
+  assert.equal(coreCalls, 0);
+  assert.equal(execFileImpl.calls.length, 0);
 });
 
 test("merge commit 与其他命令不联网；普通 next 各一次", async () => {
