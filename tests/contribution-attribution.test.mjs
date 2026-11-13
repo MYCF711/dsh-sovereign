@@ -14,6 +14,7 @@ import {
 const REPO = "MYCF711/dsh-session-superagent";
 const ROOT = `/repos/${REPO}`;
 const TOKEN = "contribution-test-secret";
+const WORKDIR = resolvePath("D:/attribution-worktree");
 
 function pull(number, login) {
   return { number, user: { login } };
@@ -172,7 +173,7 @@ test("git commit 无 issue 引用直接 next，exec/core/API 全为零", async (
   };
   const guard = createContributionGuard({ core: fakeCore, execFileImpl, api });
   const next = nextSpy();
-  const result = await guard(execShape("bash", { command: 'git commit -m "ordinary change"' }), next);
+  const result = await guard(execShape("bash", { command: 'git commit -m "ordinary change"', workdir: WORKDIR }), next);
   assert.equal(result, "next-result");
   assert.equal(next.calls, 1);
   assert.equal(execFileImpl.calls.length, 0);
@@ -185,7 +186,7 @@ test("git commit issue 缺 Co-authored-by DENY；token 仅入 gh 环境", async 
   const api = fakeApi(issueRoutes());
   const guard = createContributionGuard({ execFileImpl, api, env: { GH_TOKEN: TOKEN } });
   const next = nextSpy();
-  const decision = await guard(execShape("pwsh", { command: 'git commit -m "fix #39"' }), next);
+  const decision = await guard(execShape("pwsh", { command: 'git commit -m "fix #39"', workdir: WORKDIR }), next);
   assert.equal(decision.kind, "deny");
   assert.match(decision.reason, /#39/);
   assert.match(decision.reason, /@octocat/);
@@ -194,6 +195,7 @@ test("git commit issue 缺 Co-authored-by DENY；token 仅入 gh 环境", async 
   assert.equal(execFileImpl.calls.length, 2);
   assert.equal(api.calls.length, 2);
   for (const call of execFileImpl.calls) {
+    assert.equal(call.options.cwd, WORKDIR);
     assert.equal(call.args.join(" ").includes(TOKEN), false);
     if (call.file === "gh") assert.equal(call.options.env.GH_TOKEN, TOKEN);
     if (call.file === "git") assert.equal(call.options.env.GH_TOKEN, undefined);
@@ -213,7 +215,7 @@ test("git commit -F 有 noreply Co-authored-by PASS", async () => {
     },
   });
   const next = nextSpy();
-  const workdir = resolvePath("D:/attribution-worktree");
+  const workdir = WORKDIR;
   const result = await guard(execShape("bash", { command: "git commit -F relative.txt", workdir }), next);
   assert.equal(result, "next-result");
   assert.equal(next.calls, 1);
@@ -295,7 +297,7 @@ test("gh pr create 共享 #41 外部非 merge SHA DENY，merge-base/log 各一�
   const guard = createContributionGuard({ execFileImpl, api });
   const next = nextSpy();
   const decision = await guard(
-    execShape("bash", { command: `gh pr create --repo ${REPO} --base main --title test --body test` }),
+    execShape("bash", { command: `gh pr create --repo ${REPO} --base main --title test --body test`, workdir: WORKDIR }),
     next,
   );
   assert.equal(decision.kind, "deny");
@@ -312,7 +314,7 @@ test("原作者 gh pr create PASS，且不读取自己开放 PR 的 commits", as
   const guard = createContributionGuard({ execFileImpl, api });
   const next = nextSpy();
   const result = await guard(
-    execShape("pwsh", { command: `gh pr create --repo ${REPO} --base main` }),
+    execShape("pwsh", { command: `gh pr create --repo ${REPO} --base main`, workdir: WORKDIR }),
     next,
   );
   assert.equal(result, "next-result");
@@ -322,7 +324,7 @@ test("原作者 gh pr create PASS，且不读取自己开放 PR 的 commits", as
   assert.equal(api.calls.some((path) => path.includes("/pulls/41/commits")), false);
 });
 
-test("github POST pulls 创建 PR 复用本地 SHA 与 checkBranchAttribution", async () => {
+test("github POST pulls 给绝对 workdir 后保留本地 SHA 与 checkBranchAttribution", async () => {
   const calls = [];
   const fakeCore = {
     ...core,
@@ -337,19 +339,95 @@ test("github POST pulls 创建 PR 复用本地 SHA 与 checkBranchAttribution", 
       };
     },
   };
-  const guard = createContributionGuard({ core: fakeCore, execFileImpl: branchExec("shared-sha", "feature"), api: fakeApi({}) });
+  const execFileImpl = branchExec("shared-sha", "feature");
+  const guard = createContributionGuard({ core: fakeCore, execFileImpl, api: fakeApi({}) });
   const next = nextSpy();
   const decision = await guard(execShape("github", {
     method: "POST",
     path: `repos/${REPO}/pulls`,
     body: JSON.stringify({ base: "main", head: "feature", title: "test" }),
+    workdir: WORKDIR,
   }), next);
   assert.equal(decision.kind, "deny");
   assert.match(decision.reason, /应回 PR #41/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].repo, REPO);
   assert.deepEqual(calls[0].shas, ["shared-sha"]);
+  assert.equal(execFileImpl.calls.length, 2);
+  assert.ok(execFileImpl.calls.every((call) => call.options.cwd === WORKDIR));
   assert.equal(next.calls, 0);
+});
+
+test("GitHub POST pulls 无 cwd 复现：0 子进程/0 API 且 DENY", async () => {
+  const execFileImpl = fakeExec();
+  const api = fakeApi({});
+  let coreCalls = 0;
+  const fakeCore = {
+    ...core,
+    async checkBranchAttribution() { coreCalls += 1; throw new Error("must not run"); },
+  };
+  const guard = createContributionGuard({ core: fakeCore, execFileImpl, api });
+  const next = nextSpy();
+  const decision = await guard(execShape("github", {
+    method: "POST",
+    path: `repos/${REPO}/pulls`,
+    body: JSON.stringify({ base: "main", head: "feature", title: "test" }),
+    confirm: true,
+  }), next);
+  assert.equal(decision.kind, "deny");
+  assert.match(decision.reason, /目标仓库的绝对 workdir\/cwd/);
+  assert.match(decision.reason, /不会继承宿主 process\.cwd\(\)/);
+  assert.equal(execFileImpl.calls.length, 0);
+  assert.equal(api.calls.length, 0);
+  assert.equal(coreCalls, 0);
+  assert.equal(next.calls, 0);
+});
+
+test("GitHub POST pulls 相对 cwd 同样 0 子进程/0 API 且 DENY", async () => {
+  const execFileImpl = fakeExec();
+  const api = fakeApi({});
+  const guard = createContributionGuard({ execFileImpl, api });
+  const next = nextSpy();
+  const decision = await guard(execShape("github", {
+    method: "POST",
+    path: `repos/${REPO}/pulls`,
+    body: JSON.stringify({ base: "main", head: "feature", title: "test" }),
+    workdir: "relative/repository",
+  }), next);
+  assert.equal(decision.kind, "deny");
+  assert.match(decision.reason, /目标仓库的绝对 workdir\/cwd/);
+  assert.match(decision.reason, /relative\/repository/);
+  assert.equal(execFileImpl.calls.length, 0);
+  assert.equal(api.calls.length, 0);
+  assert.equal(next.calls, 0);
+});
+
+test("commit、local create、repo 推断 merge 缺绝对 cwd 都在任何 I/O 前 DENY", async () => {
+  const execFileImpl = fakeExec();
+  const api = fakeApi({});
+  let coreCalls = 0;
+  const fakeCore = {
+    ...core,
+    async checkCommitAttribution() { coreCalls += 1; throw new Error("must not run"); },
+    async checkAttribution() { coreCalls += 1; throw new Error("must not run"); },
+    async checkBranchAttribution() { coreCalls += 1; throw new Error("must not run"); },
+  };
+  const guard = createContributionGuard({ core: fakeCore, execFileImpl, api });
+  for (const exec of [
+    execShape("bash", { command: 'git commit -m "fix #39"' }),
+    execShape("bash", { command: `gh pr create --repo ${REPO} --base main --head feature` }),
+    execShape("bash", { command: "gh pr merge 49" }),
+  ]) {
+    const next = nextSpy();
+    const decision = await guard(exec, next);
+    assert.equal(decision.kind, "deny");
+    assert.match(decision.reason, /目标仓库的绝对 workdir\/cwd/);
+    assert.match(decision.reason, /不会继承宿主 process\.cwd\(\)/);
+    assert.equal(next.calls, 0);
+  }
+  assert.equal(execFileImpl.calls.length, 0);
+  assert.equal(api.calls.length, 0);
+  assert.equal(coreCalls, 0);
 });
 
 test("forkOwner:branch 使用 gh api 远端 head SHA，不读本地 merge-base/log", async () => {
@@ -411,7 +489,7 @@ test("merge commit 与其他命令不联网；普通 next 各一次", async () =
     assert.equal(next.calls, 1);
   }
   const next = nextSpy();
-  assert.equal(await guard(execShape("bash", { command: 'git commit -m "Merge #41"' }), next), "next-result");
+  assert.equal(await guard(execShape("bash", { command: 'git commit -m "Merge #41"', workdir: WORKDIR }), next), "next-result");
   assert.equal(next.calls, 1);
   assert.equal(execFileImpl.calls.length, 1);
   assert.equal(api.calls.length, 0);
