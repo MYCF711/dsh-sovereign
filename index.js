@@ -34,10 +34,12 @@
 //
 // Host builtins available here are only: ctx / console / btoa / atob /
 // TextEncoder / TextDecoder. There is no fetch, no process, no Buffer, no
-// timers — every listener below is therefore synchronous and pure string work,
-// which is also consistent with the package making zero network calls.
+// timers in the string-processing listeners. The contribution-attribution
+// listener is the explicit exception: only targeted commit/PR shapes may use
+// node execFile for gh/git; every other tool call still goes straight to next().
 
 import { readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
+import { armContributionGuard } from "./lib/contribution-guard.js";
 
 export const name = "dsh-sovereign";
 
@@ -2152,6 +2154,10 @@ export function apply(ctx) {
     });
     return off;
   });
+
+  // Contribution attribution gate: applies to every preset through this host bundle.
+  // Only commit / PR merge / PR create shapes reach git/gh; every other call is next().
+  ctx.effect(() => armContributionGuard(ctx));
 
   console.log(
     "[sovereign] v" + PKG_VERSION + " clause section "
