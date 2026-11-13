@@ -17,14 +17,15 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - `git commit` 只解析 `-m` / `--message` / `-F`；无 issue 引用直接放行，merge commit 跳过。本地 PR create 使用 `git merge-base` 与 `git log --no-merges --format=%H`，merge SHA 不参与归属判定；`forkOwner:branch` 改用 `gh api repos/<forkOwner>/<repoName>/commits/<branch>` 的可信远端 SHA。
 - 新增 `lib/check-pr-attribution.mjs`：明确快照自 `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`。上游 632 行正文逐字节保留，文件尾仅追加 `checkCommitAttribution` / `checkBranchAttribution` 两个集成 helper，复用既有 issue 与共享提交判据。
 - API / 本地判据失败一律 DENY，并提示检查 `gh auth status`、仓库权限及 base/head；token 仅进入 `gh` 环境，不进入 argv / 日志；`git` / `gh` 均由 `execFile` 直接调用，不经过工具 hook。
-- 新增 `tests/contribution-attribution.test.mjs`（17 项），由 `tests/run-all.mjs` 的 `*.test.mjs` 发现机制自动接入；覆盖无引用 PASS、缺署名 DENY、有署名 PASS、#49→#41 merge DENY、merge flag 前置编号、create 共享 #41 DENY、原作者 create PASS、fork head 远端 SHA、merge/其他命令零联网、API 失败 DENY、github 工具形状、reason 与调用次数。
+- 新增 `tests/contribution-attribution.test.mjs`（20 项），由 `tests/run-all.mjs` 的 `*.test.mjs` 发现机制自动接入；覆盖无引用 PASS、缺署名 DENY、有署名 PASS、#49→#41 merge DENY、merge flag 前置编号、create 共享 #41 DENY、原作者 create PASS、fork head 远端 SHA、缺失/相对 cwd 零 I/O DENY、merge/其他命令零联网、API 失败 DENY、github 工具形状、reason 与调用次数。
 - `package.json` 的发布文件清单加入 `lib`，版本号保持 0.8.0，未发布新版本；主权条款文本未改。
 
-### Fixed — 全局门禁终审三项
+### Fixed — 全局门禁边界修复
 
 - `git commit -F relative.txt` 现在按工具调用的 `operation.cwd` 经 `node:path.resolve` 定位消息文件，测试断言实际读取路径。
 - `gh pr merge` 解析首个合法 positional PR 编号并跳过带值 flags；`--merge 49` 与 `-R owner/repo 49` 均进入同一 DENY 判据。
 - `gh pr create --head forkOwner:branch` 使用 fork 同名仓库的远端 branch commit SHA，不再以本地同名分支冒充；该形状不执行本地 merge-base/log，远端 API 失败 DENY。
+- commit、需要本地 merge-base/log 的 create、以及缺 repo 需 `gh repo view` 推断的 merge，在缺少绝对 workdir/cwd 或给出相对路径时，于任何 git/gh/API 前 DENY，避免继承宿主 `process.cwd()`。显式 repo merge 与显式 repo 的纯远端 fork create 保留例外；GitHub POST pulls 原 repro、相对 cwd 与绝对 cwd 原行为均有产品测试。
 
 **激活状态**：本项只修改 0.8.0 源码。部署到已安装插件后仍需用户重载该插件才会激活；当前运行实例未重载，本记录不声称门禁已生效。
 
