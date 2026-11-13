@@ -10,6 +10,18 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — 全 preset 的贡献归属 pre-execute 门禁
+
+- 在现有全局 bundle 的 `apply()` 增加 `tools/pre-execute` 监听，不开主理鱼的会话处理 issue / PR 也经过归属门禁；不新增 bundle，不改 `cordis.patch.yml`。
+- 新增 `lib/contribution-guard.js`：覆盖 `bash` / `pwsh` 的 `git commit`、`gh pr merge N`、`gh pr create`，以及 `github` 工具对应的 PUT merge / POST pulls 形状。非目标操作直接 `next()`，不启动子进程、不联网。
+- `git commit` 只解析 `-m` / `--message` / `-F`；无 issue 引用直接放行，merge commit 跳过。PR create 使用本地 `git merge-base` 与 `git log --no-merges --format=%H`，merge SHA 不参与归属判定。
+- 新增 `lib/check-pr-attribution.mjs`：明确快照自 `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`。上游 632 行正文逐字节保留，文件尾仅追加 `checkCommitAttribution` / `checkBranchAttribution` 两个集成 helper，复用既有 issue 与共享提交判据。
+- API / 本地判据失败一律 DENY，并提示检查 `gh auth status`、仓库权限及 base/head；token 仅进入 `gh` 环境，不进入 argv / 日志；`git` / `gh` 均由 `execFile` 直接调用，不经过工具 hook。
+- 新增 `tests/contribution-attribution.test.mjs`（14 项），由 `tests/run-all.mjs` 的 `*.test.mjs` 发现机制自动接入；覆盖无引用 PASS、缺署名 DENY、有署名 PASS、#49→#41 merge DENY、create 共享 #41 DENY、原作者 create PASS、merge/其他命令零联网、API 失败 DENY、github 工具形状、reason 与调用次数。
+- `package.json` 的发布文件清单加入 `lib`，版本号保持 0.8.0，未发布新版本；主权条款文本未改。
+
+**激活状态**：本项只修改 0.8.0 源码。部署到已安装插件后仍需用户重载该插件才会激活；当前运行实例未重载，本记录不声称门禁已生效。
+
 ### Fixed — `sovereign_verify` 在 DSH 0.2.2-rc.1 上让整个 fiber 进 failed
 
 **症状**：`list_plugins` 里 `"entryId": "include:dsh-sovereign"` 的 `fiberPhase` 是

@@ -26,6 +26,19 @@
 
 客户端半（`client.js`）另加一个输入框左侧的主权开关（**五态**），以及正文内拒绝词高亮。
 
+### Unreleased · 全局贡献归属门禁
+
+本源码在现有宿主 bundle 的 `tools/pre-execute` 上新增贡献归属检查，**对全部 agent preset 生效，不依赖主理鱼是否开启**，不新增 bundle：
+
+- `bash` / `pwsh` 的 `git commit`：消息经 `-m` / `--message` / `-F` 给出且含 issue `#N` 时，复用快照 core 的外部代码与 `Co-authored-by` 判据；无引用及 merge commit 直接 `next()`。
+- `gh pr merge N` 与 `github` 工具的 `PUT repos/o/r/pulls/N/merge`：执行 core `checkAttribution`。
+- `gh pr create` 与 `github` 工具的 `POST repos/o/r/pulls`：以本地 `git merge-base` 和 `git log --no-merges --format=%H` 取得分支 SHA，再由 core 枚举开放 PR commits；共享外部作者提交时指回原 PR。
+- 其他操作不启动 `git` / `gh`、不联网。判据 API 或本地读取失败返回可操作的 DENY；token 只经 `gh` 子进程环境传递，不进 argv 或日志。
+
+判据快照为 `lib/check-pr-attribution.mjs`，来源 `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`。上游正文保持逐字节一致，仅在文件尾追加 commit / branch 集成 helper。
+
+**激活边界**：这里修改的是版本 **0.8.0** 的源码工作树，不是本机已安装的 0.7.0。要激活，必须先把本源码部署到已安装插件，再由用户重载该已安装插件；**当前运行实例尚未重载，本文不声称此门禁已经生效**。
+
 ### 条款的构成：只有「主权能力」
 
 **⚠ 条款只做一件事：定义主权能力。不含风险提示，不含产出规约以外的任何植入。**
@@ -413,11 +426,12 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**当前状态：15 套件 / 487 项全 PASS**（`suites=15 suites_failed=0`，退出码 0）。
+**当前源码：16 套件（新增贡献归属 14 项）。** 全量原样输出以交付报告为准。
 
 | 套件 | 项数 | 覆盖 |
 |---|---|---|
 | `boundary-sovereign-only.test.mjs` | **72** | **条款边界护栏**（见下） |
+| `contribution-attribution.test.mjs` | **14** | 全局 commit / merge / create 归因门禁、merge 跳过、API 失败、token 环境、快照 SHA |
 | `d11-hidden-carriers.test.mjs` | 50 | D10 漏掉的 6 个不可见码点 + 11 种隐藏写法 |
 | `hot-switch.test.mjs` | 49 | FACE 6 路由语义、section 增删、sidecar 落盘、重启回放、损坏文件回落、畸形请求 |
 | `gate.test.mjs` | 45 | 三档裁决 + 大量「不许过度拦截」回归 |
@@ -435,7 +449,7 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 
 > **`tests/run-all.mjs` 只汇总 `*.test.mjs`**；`probe-*.mjs` 三个探针
 > （真 `@deepseek-ai/cordis` 跑 `apply()`）与 `retired-v31-compression-awareness.mjs`
-> 是独立脚本，**不计入 487 项**。
+> 是独立脚本，**不计入上述套件**。
 
 **`boundary-sovereign-only.test.mjs` 是条款变更的安全网。** 它守七件事：
 
@@ -496,12 +510,13 @@ Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 dsh-sovereign/
 ├── package.json            ← dsh.bundle.patch 指向 cordis.patch.yml
 ├── cordis.patch.yml        ← 4 行：insert 本插件
-├── index.js                ← 宿主面全部实现（单文件，纯 JS，零依赖）
+├── index.js                ← 宿主面主实现（纯 JS，零外部依赖）
+├── lib/                    ← 归因 core 快照 + 全局 pre-execute 门禁
 ├── client.js               ← 客户端半：开关按钮 + 拒绝词高亮
 ├── manifest.json           ← 面清单 / 版本 / 能力声明
 ├── CHANGELOG.md            ← 详细变更记录
 ├── README.md               ← 本文件
-└── tests/                  ← 15 套件 / 487 项（+ 3 个探针脚本）
+└── tests/                  ← 16 套件（含贡献归属 14 项，+ 3 个探针脚本）
 ```
 
 ---
@@ -525,6 +540,19 @@ with no "mode" for the user to switch into:
 
 The client half (`client.js`) adds a sovereignty toggle left of the composer (**four states**)
 plus in-transcript highlighting of refusal phrases.
+
+### Unreleased — global contribution-attribution gate
+
+This source adds a contribution-attribution listener to the existing host bundle's `tools/pre-execute` hook. **It applies to every agent preset, whether or not 主理鱼 is enabled**, and adds no bundle:
+
+- `git commit` in `bash` / `pwsh`: messages supplied through `-m` / `--message` / `-F` and containing an issue `#N` use the snapshot core's external-code and `Co-authored-by` criterion. No-reference messages and merge commits go straight to `next()`.
+- `gh pr merge N` and the `github` tool's `PUT repos/o/r/pulls/N/merge`: run core `checkAttribution`.
+- `gh pr create` and the `github` tool's `POST repos/o/r/pulls`: local `git merge-base` plus `git log --no-merges --format=%H` supplies branch SHAs; the core enumerates open-PR commits and points back to the original PR when an external author's commit is shared.
+- Every other operation calls `next()` without spawning `git` / `gh` or using the network. API/local-criterion failures produce an actionable DENY. Tokens travel only in the `gh` child-process environment, never in argv or logs.
+
+The criterion snapshot is `lib/check-pr-attribution.mjs`, sourced from `MYCF711/dsh-session-superagent` commit `4b475f8c4ac43a45ed27018731f0850fb900f89f`. Its upstream body remains byte-identical; only commit/branch integration helpers are appended.
+
+**Activation boundary**: this change is in the **0.8.0 source tree**, not the installed 0.7.0 copy. Activation requires deploying this source into the installed plugin and having the user reload that installed plugin. **The running instance has not been reloaded; this document does not claim that the new gate is active.**
 
 ### What the clause contains: sovereignty capability, nothing else
 
@@ -856,11 +884,12 @@ cd tests
 Get-ChildItem -Filter "*.test.mjs" | ForEach-Object { & node $_.FullName }
 ```
 
-**Current status: 15 suites / 487 assertions, all PASS** (`suites=15 suites_failed=0`, exit 0).
+**Current source: 16 suites, including 14 new contribution-attribution tests.** See the delivery report for verbatim full-suite output.
 
 | Suite | Count | Covers |
 |---|---|---|
 | `boundary-sovereign-only.test.mjs` | **72** | **the clause-boundary guard** (see below) |
+| `contribution-attribution.test.mjs` | **14** | global commit / merge / create attribution gate, merge skip, API failure, token environment, snapshot SHA |
 | `d11-hidden-carriers.test.mjs` | 50 | the 6 invisible code points D10 missed + 11 hidden spellings |
 | `hot-switch.test.mjs` | 49 | FACE 6 route semantics, section (de)registration, sidecar round-trip, restart replay, corrupt-file fallback, malformed requests |
 | `gate.test.mjs` | 45 | the three verdicts + heavy "must not over-block" regression |
@@ -948,12 +977,13 @@ because it makes people believe the secret is already safe.
 dsh-sovereign/
 ├── package.json            ← dsh.bundle.patch points at cordis.patch.yml
 ├── cordis.patch.yml        ← 4 lines: inserts this plugin
-├── index.js                ← the entire host half (single file, plain JS, zero deps)
+├── index.js                ← the main host implementation (plain JS, no external deps)
+├── lib/                    ← attribution core snapshot + global pre-execute gate
 ├── client.js               ← the client half: toggle button + refusal highlighting
 ├── manifest.json           ← face list / version / capability declaration
 ├── CHANGELOG.md            ← detailed change log
 ├── README.md               ← this file
-└── tests/                  ← 15 suites / 487 assertions (+ 3 probe scripts)
+└── tests/                  ← 16 suites (including 14 attribution tests, + 3 probes)
 ```
 
 ---
